@@ -95,18 +95,20 @@ void setup() {
 void loop() {
   int StartTime, EndTime;
   camera_fb_t *fb = NULL;
-  fb = esp_camera_fb_get();
-  if (!fb) {
-    Serial.println("Camera capture failed");
-    return;
-  }
+
   // wait until the button is pressed
   while (!digitalRead(BTN)) {
+    fb = esp_camera_fb_get();
+    if (!fb) {
+      Serial.println("Camera capture failed");
+      return;
+    }
     Serial.println("Start show screen.");
     StartTime = millis();
     showScreen(fb);
     EndTime = millis();
     Serial.printf("End show screen. spend time: %d ms\n", EndTime - StartTime);
+    esp_camera_fb_return(fb);
   };
   delay(1000);
 
