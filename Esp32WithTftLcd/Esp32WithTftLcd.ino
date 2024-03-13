@@ -34,12 +34,34 @@ ei_impulse_result_t result = {0};
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 
+int interruptPin = BTN;
+
+// Interrupt Service Routine (IRS) callback function, declare as IRAM_ATTR means put it in RAM (increase meet rate)
+// Note: don't know why... isr need locate above setup()
+void IRAM_ATTR isr_Callback() {  
+  int StartTime, EndTime;
+
+  // capture a image and classify it
+  Serial.println("Start classify.");
+  StartTime = millis();
+  String result = classify();
+  EndTime = millis();
+  Serial.printf("End classify. spend time: %d ms\n", EndTime - StartTime);
+
+  // display result
+  Serial.printf("Result: %s\n", result);
+  tft_drawtext(4, 120 - 16, result, 2, ST77XX_GREEN);
+
+  // wait for next press button to exit ISR (continue show screen)
+  while (!digitalRead(BTN));
+}
+
 // setup
 void setup() {
   Serial.begin(115200);
 
   // button
-  pinMode(4, INPUT);
+  pinMode(BTN, INPUT);
 
   // TFT display init
   tft.initR(INITR_GREENTAB); // you might need to use INITR_REDTAB or INITR_BLACKTAB to get correct text colors
@@ -87,6 +109,9 @@ void setup() {
     s->set_saturation(s, 0); // lower the saturation
   }
 
+  // set interrupt service routine for button (GPIO 4), trigger: LOW/HIGH/CHANGE/RISING/FALLING, FALLING: when release button 
+  attachInterrupt(digitalPinToInterrupt(interruptPin), isr_Callback, FALLING);  
+
   Serial.println("Camera Ready!...(standby, press button to start)");
   tft_drawtext(4, 4, "Standby", 1, ST77XX_BLUE);
 }
@@ -97,21 +122,21 @@ void loop() {
   camera_fb_t *fb = NULL;
 
   // wait until the button is pressed
-  while (!digitalRead(BTN)) {
-    fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Camera capture failed");
-      return;
-    }
-    Serial.println("Start show screen.");
-    StartTime = millis();
-    showScreen(fb);
-    EndTime = millis();
-    Serial.printf("End show screen. spend time: %d ms\n", EndTime - StartTime);
-    esp_camera_fb_return(fb);
-  };
-  delay(1000);
-
+  //while (!digitalRead(BTN)) {
+  fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    return;
+  }
+  Serial.println("Start show screen.");
+  StartTime = millis();
+  showScreen(fb);
+  EndTime = millis();
+  Serial.printf("End show screen. spend time: %d ms\n", EndTime - StartTime);
+  esp_camera_fb_return(fb);
+  //};
+  //delay(1000);
+/*
   // capture a image and classify it
   Serial.println("Start classify.");
   StartTime = millis();
@@ -126,6 +151,7 @@ void loop() {
   // wait for next press button to continue show screen
   while (!digitalRead(BTN));
   delay(1000);
+*/
 }
 
 void showScreen(camera_fb_t *fb) {
