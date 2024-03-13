@@ -193,7 +193,8 @@ bool capture() {
   tft.drawRGBBitmap(0, 0, (uint16_t*)rgb565, 120, 120);
 
   // --- Free memory ---
-  rgb565 = NULL;
+  //rgb565 = NULL;
+  free(rgb565);
   dl_matrix3du_free(rgb888_matrix);
   esp_camera_fb_return(fb);
 
