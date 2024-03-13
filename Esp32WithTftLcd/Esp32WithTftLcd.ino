@@ -43,7 +43,7 @@ void setup() {
 
   // TFT display init
   tft.initR(INITR_GREENTAB); // you might need to use INITR_REDTAB or INITR_BLACKTAB to get correct text colors
-  tft.setRotation(0);
+  tft.setRotation(3);  // 1 turn 90 degrees, 2: 180, 3: 270
   tft.fillScreen(ST77XX_BLACK);
 
   // cam config
@@ -70,7 +70,7 @@ void setup() {
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size = FRAMESIZE_240X240;
   config.jpeg_quality = 10;
-  config.fb_count = 1;
+  config.fb_count = 2;
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -93,22 +93,61 @@ void setup() {
 
 // main loop
 void loop() {
-
+  int StartTime, EndTime;
+  camera_fb_t *fb = NULL;
+  fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    return;
+  }
   // wait until the button is pressed
-  while (!digitalRead(BTN));
-  delay(100);
+  while (!digitalRead(BTN)) {
+    Serial.println("Start show screen.");
+    StartTime = millis();
+    showScreen(fb);
+    EndTime = millis();
+    Serial.printf("End show screen. spend time: %d ms\n", EndTime - StartTime);
+  };
+  delay(1000);
 
   // capture a image and classify it
+  Serial.println("Start classify.");
+  StartTime = millis();
   String result = classify();
+  EndTime = millis();
+  Serial.printf("End classify. spend time: %d ms\n", EndTime - StartTime);
 
   // display result
   Serial.printf("Result: %s\n", result);
   tft_drawtext(4, 120 - 16, result, 2, ST77XX_GREEN);
+
+  // wait for next press button to continue show screen
+  while (!digitalRead(BTN));
+  delay(1000);
+}
+
+void showScreen(camera_fb_t *fb) {
+  int StartTime, EndTime;
+
+  // --- Convert frame to RGB565 and display on the TFT ---
+  Serial.println("  Converting to RGB565 and display on TFT...");
+  uint8_t *rgb565 = (uint8_t *) malloc(240 * 240 * 3);
+  //uint8_t *rgb565 = (uint8_t *) malloc(96 * 96 * 3); 
+  StartTime = millis();
+  jpg2rgb565(fb->buf, fb->len, rgb565, JPG_SCALE_2X); // scale to half size
+  EndTime = millis();
+  Serial.printf("  jpg2rgb565() spend time: %d ms\n", EndTime - StartTime);
+  //jpg2rgb565(fb->buf, fb->len, rgb565, JPG_SCALE_NONE); // scale to half size
+  tft.drawRGBBitmap(0, 0, (uint16_t*)rgb565, 120, 120);
+
+  // --- Free memory ---
+  //rgb565 = NULL;
+  free(rgb565);
 }
 
 // classify labels
 String classify() {
-
+  int StartTime, EndTime;
   // run image capture once to force clear buffer
   // otherwise the captured image below would only show up next time you pressed the button!
   capture_quick();
@@ -117,14 +156,17 @@ String classify() {
   if (!capture()) return "Error";
   tft_drawtext(4, 4, "Classifying...", 1, ST77XX_CYAN);
 
-  Serial.println("Getting image...");
+  Serial.println("  Getting image...");
   signal_t signal;
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   signal.get_data = &raw_feature_get_data;
 
-  Serial.println("Run classifier...");
+  Serial.println("  Run classifier...");
   // Feed signal to the classifier
+  StartTime = millis();
   EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false /* debug */);
+  EndTime = millis();
+  Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
   // --- Free memory ---
   dl_matrix3du_free(resized_matrix);
 
@@ -185,7 +227,8 @@ bool capture() {
   Serial.println("Resizing the frame buffer...");
   resized_matrix = dl_matrix3du_alloc(1, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT, 3);
   image_resize_linear(resized_matrix->item, rgb888_matrix->item, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT, 3, fb->width, fb->height);
-
+  showScreen(fb);
+/*
   // --- Convert frame to RGB565 and display on the TFT ---
   Serial.println("Converting to RGB565 and display on TFT...");
   uint8_t *rgb565 = (uint8_t *) malloc(240 * 240 * 3);
@@ -195,6 +238,9 @@ bool capture() {
   // --- Free memory ---
   //rgb565 = NULL;
   free(rgb565);
+*/
+
+  // --- Free memory ---
   dl_matrix3du_free(rgb888_matrix);
   esp_camera_fb_return(fb);
 
