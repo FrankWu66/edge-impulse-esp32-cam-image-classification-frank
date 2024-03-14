@@ -78,8 +78,10 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_240X240;
+  //config.pixel_format = PIXFORMAT_JPEG;
+  config.pixel_format = PIXFORMAT_RGB565;
+  //config.frame_size =  FRAMESIZE_240X240;
+  config.frame_size =  FRAMESIZE_96X96;
   config.jpeg_quality = 10;
   config.fb_count = 2;
 
@@ -151,6 +153,7 @@ void loop() {
 void showScreen(camera_fb_t *fb) {
   int StartTime, EndTime;
 
+/*
   // --- Convert frame to RGB565 and display on the TFT ---
   Serial.println("  Converting to RGB565 and display on TFT...");
   uint8_t *rgb565 = (uint8_t *) malloc(240 * 240 * 3);
@@ -165,6 +168,9 @@ void showScreen(camera_fb_t *fb) {
   // --- Free memory ---
   //rgb565 = NULL;
   free(rgb565);
+*/
+
+  tft.drawRGBBitmap(32, 12, (uint16_t*)fb->buf, 96, 96);  // center alignment.
 }
 
 // classify labels
@@ -245,10 +251,13 @@ bool capture() {
   dl_matrix3du_t *rgb888_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
   fmt2rgb888(fb->buf, fb->len, fb->format, rgb888_matrix->item);
 
+/*
   // --- Resize the RGB888 frame to 96x96 in this example ---
   Serial.println("Resizing the frame buffer...");
   resized_matrix = dl_matrix3du_alloc(1, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT, 3);
   image_resize_linear(resized_matrix->item, rgb888_matrix->item, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT, 3, fb->width, fb->height);
+*/
+  resized_matrix = rgb888_matrix; // if do not need to resize, we can use rgb888_matrix to classify directly.
   showScreen(fb);
 /*
   // --- Convert frame to RGB565 and display on the TFT ---
@@ -263,7 +272,7 @@ bool capture() {
 */
 
   // --- Free memory ---
-  dl_matrix3du_free(rgb888_matrix);
+  //dl_matrix3du_free(rgb888_matrix);  // don't free rgb888_matrix due to it assign to resized_matrix and resized_matrix will be free in up function.
   esp_camera_fb_return(fb);
 
   return true;
