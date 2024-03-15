@@ -170,7 +170,15 @@ void showScreen(camera_fb_t *fb) {
   free(rgb565);
 */
 
-  tft.drawRGBBitmap(32, 12, (uint16_t*)fb->buf, 96, 96);  // center alignment.
+  //tft.drawRGBBitmap(32, 12, (uint16_t*)fb->buf, 96, 96);  // center alignment.
+
+  // Use drawPixel ... but speed very slow ... about 1 FPS
+  for (uint8_t y = 0; y < 96; y++) {
+    for (uint8_t x = 0; x < 96; x++) {
+      tft.drawPixel (x+32, y+12, ((fb->buf[2*i]) << 8) | (fb->buf[2*i+1]));
+      i++;
+    }
+  }
 }
 
 // classify labels
