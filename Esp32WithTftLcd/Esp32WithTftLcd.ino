@@ -29,10 +29,19 @@
 
 #define BTN       4 // button (shared with flash led)
 
+#define SHOW_WIDTH  96
+#define SHOW_HEIGHT 96
+#define RGB565_SIZE SHOW_WIDTH*SHOW_HEIGHT*2
+
+// after rotate 270 degrees
+#define TFT_LCD_WIDTH   160
+#define TFT_LCD_HEIGHT  120
+
 dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+uint16_t *rgb565 = (uint16_t *) malloc(RGB565_SIZE);  // for swap pixel data from fb->buf.
 
 int interruptPin = BTN;
 bool triggerClassify = false;
@@ -78,8 +87,10 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_240X240;
+  //config.pixel_format = PIXFORMAT_JPEG;
+  config.pixel_format = PIXFORMAT_RGB565;
+  //config.frame_size =  FRAMESIZE_240X240;
+  config.frame_size =  FRAMESIZE_96X96;
   config.jpeg_quality = 10;
   config.fb_count = 2;
 
@@ -102,7 +113,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(interruptPin), isr_Callback, FALLING);  
 
   Serial.println("Camera Ready!...(standby, press button to start)");
-  tft_drawtext(4, 4, "Standby", 1, ST77XX_BLUE);
+  //tft_drawtext(4, 4, "Standby", 1, ST77XX_BLUE);
 }
 
 // main loop
@@ -117,11 +128,11 @@ void loop() {
     Serial.println("Camera capture failed");
     return;
   }
-  Serial.println("Start show screen.");
+  //Serial.println("Start show screen.");
   StartTime = millis();
   showScreen(fb);
   EndTime = millis();
-  Serial.printf("End show screen. spend time: %d ms\n", EndTime - StartTime);
+  Serial.printf("Show screen. spend time: %d ms\n", EndTime - StartTime);
   esp_camera_fb_return(fb);
   //};
   //delay(1000);
@@ -149,8 +160,9 @@ void loop() {
 }
 
 void showScreen(camera_fb_t *fb) {
-  int StartTime, EndTime;
+  //int StartTime, EndTime;
 
+/*
   // --- Convert frame to RGB565 and display on the TFT ---
   Serial.println("  Converting to RGB565 and display on TFT...");
   uint8_t *rgb565 = (uint8_t *) malloc(240 * 240 * 3);
@@ -165,6 +177,13 @@ void showScreen(camera_fb_t *fb) {
   // --- Free memory ---
   //rgb565 = NULL;
   free(rgb565);
+*/
+
+memcpy (rgb565, fb->buf, RGB565_SIZE);
+for (uint32_t index = 0; index < RGB565_SIZE/2; index++) {
+  *(rgb565 + index) = __builtin_bswap16(*(rgb565 + index));  //need to swap uint16_t data for RGB draw
+}
+tft.drawRGBBitmap((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, rgb565, SHOW_WIDTH, SHOW_HEIGHT);
 }
 
 // classify labels
@@ -245,10 +264,13 @@ bool capture() {
   dl_matrix3du_t *rgb888_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
   fmt2rgb888(fb->buf, fb->len, fb->format, rgb888_matrix->item);
 
+/*
   // --- Resize the RGB888 frame to 96x96 in this example ---
   Serial.println("Resizing the frame buffer...");
   resized_matrix = dl_matrix3du_alloc(1, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT, 3);
   image_resize_linear(resized_matrix->item, rgb888_matrix->item, EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT, 3, fb->width, fb->height);
+*/
+  resized_matrix = rgb888_matrix; // if do not need to resize, we can use rgb888_matrix to classify directly.
   showScreen(fb);
 /*
   // --- Convert frame to RGB565 and display on the TFT ---
@@ -263,7 +285,7 @@ bool capture() {
 */
 
   // --- Free memory ---
-  dl_matrix3du_free(rgb888_matrix);
+  //dl_matrix3du_free(rgb888_matrix);  // don't free rgb888_matrix due to it assign to resized_matrix and resized_matrix will be free in up function.
   esp_camera_fb_return(fb);
 
   return true;
