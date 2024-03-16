@@ -29,10 +29,19 @@
 
 #define BTN       4 // button (shared with flash led)
 
+#define SHOW_WIDTH  96
+#define SHOW_HEIGHT 96
+#define RGB565_SIZE SHOW_WIDTH*SHOW_HEIGHT*2
+
+// after rotate 270 degrees
+#define TFT_LCD_WIDTH   160
+#define TFT_LCD_HEIGHT  120
+
 dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+uint16_t *rgb565 = (uint16_t *) malloc(RGB565_SIZE);  // for swap pixel data from fb->buf.
 
 int interruptPin = BTN;
 bool triggerClassify = false;
@@ -104,7 +113,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(interruptPin), isr_Callback, FALLING);  
 
   Serial.println("Camera Ready!...(standby, press button to start)");
-  tft_drawtext(4, 4, "Standby", 1, ST77XX_BLUE);
+  //tft_drawtext(4, 4, "Standby", 1, ST77XX_BLUE);
 }
 
 // main loop
@@ -119,11 +128,11 @@ void loop() {
     Serial.println("Camera capture failed");
     return;
   }
-  Serial.println("Start show screen.");
+  //Serial.println("Start show screen.");
   StartTime = millis();
   showScreen(fb);
   EndTime = millis();
-  Serial.printf("End show screen. spend time: %d ms\n", EndTime - StartTime);
+  Serial.printf("Show screen. spend time: %d ms\n", EndTime - StartTime);
   esp_camera_fb_return(fb);
   //};
   //delay(1000);
@@ -151,7 +160,7 @@ void loop() {
 }
 
 void showScreen(camera_fb_t *fb) {
-  int StartTime, EndTime;
+  //int StartTime, EndTime;
 
 /*
   // --- Convert frame to RGB565 and display on the TFT ---
@@ -170,15 +179,11 @@ void showScreen(camera_fb_t *fb) {
   free(rgb565);
 */
 
-  //tft.drawRGBBitmap(32, 12, (uint16_t*)fb->buf, 96, 96);  // center alignment.
-
-  // Use drawPixel ... but speed very slow ... about 1 FPS
-  for (uint8_t y = 0; y < 96; y++) {
-    for (uint8_t x = 0; x < 96; x++) {
-      tft.drawPixel (x+32, y+12, ((fb->buf[2*i]) << 8) | (fb->buf[2*i+1]));
-      i++;
-    }
-  }
+memcpy (rgb565, fb->buf, RGB565_SIZE);
+for (uint32_t index = 0; index < RGB565_SIZE/2; index++) {
+  *(rgb565 + index) = __builtin_bswap16(*(rgb565 + index));  //need to swap uint16_t data for RGB draw
+}
+tft.drawRGBBitmap((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, rgb565, SHOW_WIDTH, SHOW_HEIGHT);
 }
 
 // classify labels
