@@ -1,6 +1,5 @@
-
-
-#include <esp32-cam-cat-dog_frank_inferencing.h>  // replace with your deployed Edge Impulse library
+#include <esp32-cam-cat-dog_3_label_inferencing.h>
+//#include <esp32-cam-cat-dog_frank_inferencing.h>  // replace with your deployed Edge Impulse library
 
 #define CAMERA_MODEL_AI_THINKER
 
@@ -21,8 +20,10 @@
                     // BL (back light) and VCC -> 3V3
 
 #define BTN       4 // button (shared with flash led)
-#define BTN_CONTROL false   // true: use button to capture and classify; false: loop to capture and classify.
-#define FAST_CLASSIFY 1
+
+#define BTN_CONTROL       true   // true: use button to capture and classify; false: loop to capture and classify.
+#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define FAST_CLASSIFY     1
 
 #define SHOW_WIDTH  96
 #define SHOW_HEIGHT 96
@@ -31,6 +32,13 @@
 // after rotate 270 degrees
 #define TFT_LCD_WIDTH   160
 #define TFT_LCD_HEIGHT  128
+
+typedef struct {
+	uint32_t timing;
+	float score[EI_CLASSIFIER_MAX_LABELS_COUNT];
+	uint8_t label[EI_CLASSIFIER_MAX_LABELS_COUNT];
+  uint8_t finallabel;
+} MULTI_ID_RESULT;
 
 dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
@@ -130,8 +138,25 @@ void loop() {
   showScreen(fb, TFT_YELLOW);
   EndTime = micros(); //millis();
   //Serial.printf("Show screen. spend time: %d ms\n", EndTime - StartTime);
-  Serial.printf("Show screen. spend time: %d.%d ms\n", (EndTime - StartTime)/1000, (EndTime - StartTime)%1000);
+  //Serial.printf("Show screen. spend time: %d.%d ms\n", (EndTime - StartTime)/1000, (EndTime - StartTime)%1000);
 
+#if ID_COUNT_PER_BTN == 1
+  identify(fb);
+  esp_camera_fb_return(fb);
+#else
+  esp_camera_fb_return(fb);
+  multi_identify();
+#endif
+}
+
+void showScreen(camera_fb_t *fb, uint16_t color) {
+  //int StartTime, EndTime;
+  tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)fb->buf);
+}
+
+void identify(camera_fb_t *fb) {
+  uint32_t StartTime, EndTime;
+  
   // capture a image and classify it
 #if BTN_CONTROL == true  
   if (triggerClassify) {
@@ -145,7 +170,7 @@ void loop() {
     // display result
     //Serial.printf("Result: %s\n", result);
     Serial.print("Result: "); Serial.println(result);
-    tft_drawtext(4, 120 - 16, result, 2, TFT_GREEN /*ST77XX_GREEN*/);
+    tft_drawtext(4, 128 - 16, result, 2, TFT_GREEN /*ST77XX_GREEN*/);
 
 #if BTN_CONTROL == true  
     // wait for next press button to continue show screen
@@ -153,29 +178,126 @@ void loop() {
       delay (200);
       //Serial.printf("while triggerClassify: %d \n", triggerClassify);
     }
-    //tft.fillScreen(ST77XX_BLACK);
     tft.fillScreen(TFT_BLACK);
     //delay(1000);
   }
-#else 
+#else //#if BTN_CONTROL == true  
   //delay for next loop.
 #if FAST_CLASSIFY != 1
   uint16_t delayTime = 6000;
   Serial.printf("Finish classify, wait for %d ms to next loop.\n\n\n", delayTime);
   delay(delayTime);
-#endif
+#endif //#if FAST_CLASSIFY != 1
   tft.fillScreen(TFT_BLACK);
   Serial.println("Finish classify.\n");
-#endif 
-
-  esp_camera_fb_return(fb);
+#endif //#if BTN_CONTROL == true  
 }
 
-void showScreen(camera_fb_t *fb, uint16_t color) {
-  //int StartTime, EndTime;
+//
+// In this function, independently run esp_camera_fb_get() and esp_camera_fb_return()
+//
+void multi_identify() {
+  uint32_t Index;
+  camera_fb_t *fb = NULL;
+  signal_t signal;
+  EI_IMPULSE_ERROR res;
+  MULTI_ID_RESULT MultiIdResult[ID_COUNT_PER_BTN] = {0};
+  MULTI_ID_RESULT TotalResult;
+  int LabelIndex;
+  float TmpSocre;
+  uint8_t tmp;
 
-  tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)fb->buf);
+  //ei_printf("size of MultiIdResult: %d, size of TotalResult: %d\n", sizeof(MultiIdResult), sizeof(TotalResult));
+  memset (&TotalResult, 0, sizeof(TotalResult));
 
+  if (!triggerClassify) {
+    return;
+  }
+
+// capture a image and classify it
+  Serial.printf("Start classify %d times.\n", ID_COUNT_PER_BTN);
+  tft_drawtext(4, 4, "Start classify " + String(ID_COUNT_PER_BTN) + " times.", 1, TFT_ORANGE);
+  signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
+  for (Index = 0; Index < ID_COUNT_PER_BTN; Index++) {
+    //String result = classify(fb);
+    fb = esp_camera_fb_get();
+    if (!capture(fb)) {
+      Serial.printf("capture fail, abort multi_identify.\n");
+      esp_camera_fb_return(fb);
+      return;
+    }
+    showScreen(fb, TFT_YELLOW);
+    signal.get_data = &raw_feature_get_data;
+    res = run_classifier(&signal, &result, false /* debug */);
+
+    // --- Free memory ---
+    dl_matrix3du_free(resized_matrix);
+    if (res != 0) {
+      Serial.printf("error occur in identify index: %d\n", Index);
+      continue;
+    }
+
+    // collect data
+    MultiIdResult[Index].timing = result.timing.classification;
+    TotalResult.timing += result.timing.classification;
+    TmpSocre = 0.0;
+    for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+      MultiIdResult[Index].score[ix] = result.classification[ix].value;
+      TotalResult.score[ix] += result.classification[ix].value;
+      // record the most possible label
+      if (result.classification[ix].value > TmpSocre) {
+        TmpSocre = result.classification[ix].value;
+        LabelIndex = ix;
+      }
+    } // for (size_t ix = 0;
+    MultiIdResult[Index].label[LabelIndex] = 1;
+    MultiIdResult[Index].finallabel = LabelIndex;
+    TotalResult.label[LabelIndex] += 1;
+
+    esp_camera_fb_return(fb);
+    // clean text in the bottom of tft
+    //tft.drawRect (0, 128-16, 160, 16, TFT_BLACK),
+    tft.fillRoundRect (0, 128-16, 160, 16, 0, TFT_BLACK);
+    tft_drawtext(4, 128 - 16, String(result.classification[0].label) + ":" + String(TotalResult.label[0]) + ","
+                             + String(result.classification[1].label) + ":" + String(TotalResult.label[1])
+#if EI_CLASSIFIER_LABEL_COUNT > 2
+                       + "," + String(result.classification[2].label) + ":" + String(TotalResult.label[2])
+#endif
+                             , 1, TFT_ORANGE);
+    if (Index % 10 == 0) {Serial.printf("%02d :", Index);}
+    Serial.print("*");
+  } // for (Index = 0;
+
+  tmp = 0;
+  for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
+    if (TotalResult.label[ix] > tmp) {
+      tmp = TotalResult.label[ix];
+      TotalResult.finallabel = ix;
+    }
+  }
+
+  // print total score and result
+  Serial.printf("\nEnd classify.\nTotal:\n\tavg. identify spend time: %d ms\n", TotalResult.timing/ID_COUNT_PER_BTN);
+  Serial.printf("\tidentify as: %s (%s: %d, %s: %d, %s: %d)\n", result.classification[TotalResult.finallabel].label, 
+                          result.classification[0].label, TotalResult.label[0],
+                          result.classification[1].label, TotalResult.label[1]
+#if EI_CLASSIFIER_LABEL_COUNT > 2
+                         ,result.classification[2].label, TotalResult.label[2]
+#endif
+                          );
+  Serial.printf("\taccuracy: %.2f\n", (float)TotalResult.label[TotalResult.finallabel]/ID_COUNT_PER_BTN);
+  Serial.printf("\ttotal avg. score: %s: %.2f, %s: %.2f, %s: %.2f\n",
+                          result.classification[0].label, TotalResult.score[0]/ID_COUNT_PER_BTN,
+                          result.classification[1].label, TotalResult.score[1]/ID_COUNT_PER_BTN
+#if EI_CLASSIFIER_LABEL_COUNT > 2
+                          ,result.classification[2].label, TotalResult.score[2]/ID_COUNT_PER_BTN
+#endif
+                          );
+  // wait for next press button to continue show screen
+  while (triggerClassify){
+    delay (200);
+  }
+  tft.fillScreen(TFT_BLACK);
 }
 
 // classify labels
