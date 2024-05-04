@@ -22,7 +22,7 @@
 #define BTN       4 // button (shared with flash led)
 
 #define BTN_CONTROL       true   // true: use button to capture and classify; false: loop to capture and classify.
-#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define ID_COUNT_PER_BTN  100     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
 #define FAST_CLASSIFY     1
 
 #define SHOW_WIDTH  96
@@ -215,7 +215,7 @@ void multi_identify() {
   }
 
 // capture a image and classify it
-  Serial.printf("Start classify %d times.\n", ID_COUNT_PER_BTN);
+  Serial.printf("Start classify %d times. label count: %d\n", ID_COUNT_PER_BTN, EI_CLASSIFIER_LABEL_COUNT);
   tft_drawtext(4, 4, "Start classify " + String(ID_COUNT_PER_BTN) + " times.", 1, TFT_ORANGE);
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   for (Index = 0; Index < ID_COUNT_PER_BTN; Index++) {
@@ -278,21 +278,26 @@ void multi_identify() {
 
   // print total score and result
   Serial.printf("\nEnd classify.\nTotal:\n\tavg. identify spend time: %d ms\n", TotalResult.timing/ID_COUNT_PER_BTN);
+#if EI_CLASSIFIER_LABEL_COUNT == 2
+  Serial.printf("\tidentify as: %s (%s: %d, %s: %d)\n", result.classification[TotalResult.finallabel].label, 
+                          result.classification[0].label, TotalResult.label[0],
+                          result.classification[1].label, TotalResult.label[1]);
+  Serial.printf("\taccuracy: %.2f\n", (float)TotalResult.label[TotalResult.finallabel]/ID_COUNT_PER_BTN);
+  Serial.printf("\ttotal avg. score: %s: %.2f, %s: %.2f\n",
+                          result.classification[0].label, TotalResult.score[0]/ID_COUNT_PER_BTN,
+                          result.classification[1].label, TotalResult.score[1]/ID_COUNT_PER_BTN);
+#else //#if EI_CLASSIFIER_LABEL_COUNT == 2
   Serial.printf("\tidentify as: %s (%s: %d, %s: %d, %s: %d)\n", result.classification[TotalResult.finallabel].label, 
                           result.classification[0].label, TotalResult.label[0],
-                          result.classification[1].label, TotalResult.label[1]
-#if EI_CLASSIFIER_LABEL_COUNT > 2
-                         ,result.classification[2].label, TotalResult.label[2]
-#endif
-                          );
+                          result.classification[1].label, TotalResult.label[1],
+                          result.classification[2].label, TotalResult.label[2]);
   Serial.printf("\taccuracy: %.2f\n", (float)TotalResult.label[TotalResult.finallabel]/ID_COUNT_PER_BTN);
   Serial.printf("\ttotal avg. score: %s: %.2f, %s: %.2f, %s: %.2f\n",
                           result.classification[0].label, TotalResult.score[0]/ID_COUNT_PER_BTN,
-                          result.classification[1].label, TotalResult.score[1]/ID_COUNT_PER_BTN
-#if EI_CLASSIFIER_LABEL_COUNT > 2
-                          ,result.classification[2].label, TotalResult.score[2]/ID_COUNT_PER_BTN
-#endif
-                          );
+                          result.classification[1].label, TotalResult.score[1]/ID_COUNT_PER_BTN,
+                          result.classification[2].label, TotalResult.score[2]/ID_COUNT_PER_BTN);
+#endif //#if EI_CLASSIFIER_LABEL_COUNT == 2
+
   // wait for next press button to continue show screen
   while (triggerClassify){
     delay (200);
