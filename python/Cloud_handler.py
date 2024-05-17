@@ -3,7 +3,9 @@ import cv2
 import datetime 
 import time
 
-MqttBroker="127.0.0.1"
+#MqttBroker="127.0.0.1"
+#MqttBroker="mqttgo.io"
+MqttBroker="mqtt.eclipseprojects.io"
 MqttPort=1883
 CloudTopic="frank/Clould_to_Edge"
 EdgeTopic="frank/Edge_to_Cloud"
@@ -49,11 +51,15 @@ def on_message(client, userdata, message):
 '''
 #callback for receive subscribe update.
 def on_message(client, userdata, message):
+    time_start = time.time()
     print('received from Edge: [%s]: %s' % (message.payload, datetime.datetime.now().strftime(ISOTIMEFORMAT)))
     payload = str(message.payload) + datetime.datetime.now().strftime(ISOTIMEFORMAT)
     client.publish(CloudTopic, payload)
+    time_end = time.time()
+    time_interval = time_end - time_start    
     print ("finish send" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
-    print ("\n")
+    print ('spend time (in cloud): %.6f' % time_interval)
+    print ("  ")
 '''
  
 #setting MQTT connect   

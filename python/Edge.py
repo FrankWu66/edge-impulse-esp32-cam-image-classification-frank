@@ -3,15 +3,20 @@ import cv2
 import datetime 
 import time
 
-MqttBroker="127.0.0.1"
+#MqttBroker="127.0.0.1"
+#MqttBroker="mqttgo.io"
+MqttBroker="mqtt.eclipseprojects.io"
 MqttPort=1883
 CloudTopic="frank/Clould_to_Edge"
 EdgeTopic="frank/Edge_to_Cloud"
 ISOTIMEFORMAT = '%H:%M:%S.%f'
 
 index = 0
-time_start = 0
+time_start = []
 time_end = 0
+cycle = 0
+total_time = 0
+publish_count = 0
 
 #Callback for connect.
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -23,10 +28,15 @@ def on_connect(client, userdata, flags, reason_code, properties):
 def on_message(client, userdata, message):
     global time_start
     global time_end
+    global cycle
+    global total_time
+    cycle += 1
+    print (" ")
     print ('received from Cloud: [%s]: %s' % (message.payload, datetime.datetime.now().strftime(ISOTIMEFORMAT)))
     time_end = time.time()
-    time_interval = time_end - time_start
-    print ('spend time (total): %.6f' % time_interval)
+    time_interval = time_end - time_start[cycle-1]
+    total_time += time_interval
+    print ('spend time (total): %.6f    count:%02d, avg time: %.6f' % (time_interval, cycle, total_time/cycle))
     print (" ")
 
 mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -41,20 +51,28 @@ while True:
     payload = "===" + str(index) + "=="
     index+=1
     print ("send" + payload + "start:" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
+    time_start = time.time()
     mqttc.publish(EdgeTopic, payload)
-    print ("finish send" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
+    #print ("finish send" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
     #mqttc.loop()
-    time.sleep(3)
+    time.sleep(1)
 '''
 
-while True:
+while publish_count < 300:
     index+=1
-    if index > 6:
+    publish_count += 1
+    if index > 1:
         index = 1
     img=cv2.imread(str(index) + '.jpg')
     byteArr = cv2.imencode('.jpg', img)[1].tobytes()
-    print ("send " + str(index) + ".jpg start:" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
-    time_start = time.time()
+    #print ("send " + str(index) + ".jpg start:" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
+    #time_start= time.time()
+    time_start.append(time.time())
     mqttc.publish(EdgeTopic, byteArr)
     #print ("finish send" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
-    time.sleep(3)
+    #time.sleep(2)
+
+while cycle < 300:
+    time.sleep(1)
+
+time.sleep(3)
