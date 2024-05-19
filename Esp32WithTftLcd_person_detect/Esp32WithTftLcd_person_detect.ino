@@ -10,16 +10,36 @@
 #include "image_util.h"
 #include "esp_camera.h"
 #include "camera_pins.h"
+#include <WiFi.h>
+#include <PubSubClient.h>
 
 #include "SPI.h"
 #include <TFT_eSPI.h>              // Hardware-specific library
 //#include <TJpg_Decoder.h>
+
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 #define FRANK_RED TFT_BLUE
 #define FRANK_GREEN TFT_GREEN
 #define FRANK_CYAN TFT_YELLOW
 #define FRANK_BLUE TFT_ORANGE
 #define FRANK_YELLOW TFT_CYAN
+
+// ------ 以下修改成你自己的WiFi帳號密碼 ------
+const char* ssid = "iespmqtt";
+const char* password = "12345678";
+
+// ------ 以下修改成你MQTT設定 ------
+//const char* mqtt_server = "mqtt.eclipseprojects.io";/
+//const char* mqtt_server = "mqttgo.io";
+const char* mqtt_server = "192.168.90.90";
+const unsigned int mqtt_port = 1883;
+#define CloudTopic    "frank/Clould_to_Edge"
+#define EdgeTopic     "frank/Edge_to_Cloud"
+uint32_t StartTimeMQTT;
+uint32_t TotalTimeMQTT = 0;
+uint32_t CycleMQTT = 0;
 
 #define TFT_SCLK 14 // SCL
 #define TFT_MOSI 13 // SDA
@@ -31,8 +51,8 @@
 #define BTN       4 // button (shared with flash led)
 
 #define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
-#define ID_COUNT_PER_BTN  100     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
-#define FAST_CLASSIFY     1
+#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define FAST_CLASSIFY     0
 
 #define SHOW_WIDTH  96
 #define SHOW_HEIGHT 96
@@ -52,6 +72,13 @@ typedef struct {
 dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
 
+uint8_t bmp96x96header[54] = {0x42, 0x4D, 0x36, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6C, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+char clientId[50];
+void mqtt_callback(char* topic, byte* payload, unsigned int msgLength);
+WiFiClient wifiClient;
+PubSubClient mqttClient(mqtt_server, mqtt_port, mqtt_callback, wifiClient);
+
 int interruptPin = BTN;
 bool triggerClassify = false;
 
@@ -65,8 +92,90 @@ void IRAM_ATTR isr_Callback() {
   //Serial.printf("triggerClassify: %d \n", triggerClassify);
 }
 
+//啟動WIFI連線
+void setup_wifi() {
+  Serial.printf("\nConnecting to %s", ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.print("\nWiFi Connected.  IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+ 
+//MQTT callback for subscrib CloudTopic:"frank/Clould_to_Edge"
+void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
+  uint32_t EndTime, time_interval;
+
+  CycleMQTT++;
+  Serial.printf ("received from Cloud: [%s]\n", payload);
+  EndTime = millis();
+  Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
+  time_interval = EndTime - StartTimeMQTT;
+  TotalTimeMQTT += time_interval;
+  Serial.printf ("spend time (total): %d ms, count:%03d, avg time: %d ms\n\n", time_interval, CycleMQTT, TotalTimeMQTT/CycleMQTT);
+}
+
+//重新連線MQTT Server
+boolean mqtt_nonblock_reconnect() {
+  boolean doConn = false;
+  if (! mqttClient.connected()) {
+    boolean isConn = mqttClient.connect(clientId);
+    //boolean isConn = mqttClient.connect(clientId, MQTT_USER, MQTT_PASSWORD);
+    Serial.printf("MQTT Client [%s] Connect %s !\n", clientId, (isConn ? "Successful" : "Failed"));
+    // subscribe
+    mqttClient.subscribe(CloudTopic);
+  }
+  return doConn;
+}
+
+//MQTT傳遞照片，每N秒傳一次？未到N秒：option1 - wait for it.  option2 - skip it. ??
+void MQTT_picture() {
+  uint32_t EndTime;
+  char* logIsPublished;
+
+  StartTimeMQTT = millis();
+  if (! mqttClient.connected()) {
+    // client loses its connection
+    Serial.printf("MQTT Client [%s] Connection LOST !\n", clientId);
+    mqtt_nonblock_reconnect();
+  }
+
+  if (! mqttClient.connected())
+    logIsPublished = "  No MQTT Connection, Photo NOT Published !";
+  else {
+    int imgSize = 56+(96*96*3);
+    int ps = MQTT_MAX_PACKET_SIZE;
+    // start to publish the picture
+    mqttClient.beginPublish(EdgeTopic, imgSize, false);
+
+    // send 96x96 bmp file header (56 bytes)
+    mqttClient.write(bmp96x96header, sizeof(bmp96x96header));
+
+    // send RGB888 raw data
+    imgSize = 96*96*3;
+    for (int i = 0; i < imgSize; i += ps) {
+      int s = (imgSize - i < s) ? (imgSize - i) : ps;
+      mqttClient.write((uint8_t *)(resized_matrix->item) + i, s);
+    }
+
+    boolean isPublished = mqttClient.endPublish();
+    if (isPublished)
+      logIsPublished = "  Publishing Photo to MQTT Successfully !";
+    else
+      logIsPublished = "  Publishing Photo to MQTT Failed !";
+  }
+  Serial.println(logIsPublished);
+  EndTime = millis();
+  Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
+}
+
 // setup
 void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
   Serial.begin(115200);
 
 #if BTN_CONTROL == true  
@@ -129,12 +238,20 @@ void setup() {
 
   Serial.println("Camera Ready!...(standby, press button to start)");
   //tft_drawtext(4, 4, "Standby", 1, TFT_BLUE);
+
+  //啟動WIFI連線
+  setup_wifi();
+  sprintf(clientId, "ESP32CAM_%04X", random(0xffff));  // Create a random client ID
+  //啟動MQTT連線
+  mqtt_nonblock_reconnect();  
 }
 
 // main loop
 void loop() {
   //uint32_t StartTime, EndTime;
   camera_fb_t *fb = NULL;
+
+  mqtt_nonblock_reconnect(); 
 
   fb = esp_camera_fb_get();
   if (!fb) {
@@ -238,6 +355,11 @@ void multi_identify() {
     }
     showScreen(fb, TFT_YELLOW);
     signal.get_data = &raw_feature_get_data;
+
+    // send pic via MQTT
+    MQTT_picture();
+
+    // edge impulse classify
     res = run_classifier(&signal, &result, false /* debug */);
 
     // --- Free memory ---
@@ -331,6 +453,10 @@ String classify(camera_fb_t * fb) {
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   signal.get_data = &raw_feature_get_data;
 
+  // send pic via MQTT
+  MQTT_picture();
+
+  // edge impulse classify
 //  Serial.println("  Run classifier...");
   // Feed signal to the classifier
 //  StartTime = millis();
