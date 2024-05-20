@@ -2,6 +2,8 @@ import paho.mqtt.client as mqtt
 import cv2
 import datetime 
 import time
+import os
+import sys
 
 MqttBroker="127.0.0.1"
 #MqttBroker="mqttgo.io"
@@ -19,6 +21,16 @@ index = 0
 time_start = 0
 time_end = 0
 
+path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S')
+if not os.path.isdir(path):
+    os.mkdir(path)
+
+'''
+file_path = "randomfile.txt"
+sys.stdout = open(file_path, "w")
+print("This text will be added to the file")
+'''
+
 #Callback for connect.
 def on_connect(client, userdata, flags, reason_code, properties):
     print("Cloud 連線結果：" + str(reason_code) + "\n")
@@ -35,7 +47,7 @@ def on_message(client, userdata, message):
 
     index+=1
     #filename = 's_%d.jpg' % index
-    filename = 's_%d.bmp' % index
+    filename = path + '\s_%d.bmp' % index
     time_start = time.time()
     print('received from Edge: %s' % (datetime.datetime.now().strftime(ISOTIMEFORMAT)))
     f = open(filename,'wb+')

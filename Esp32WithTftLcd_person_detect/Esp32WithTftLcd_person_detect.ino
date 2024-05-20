@@ -53,6 +53,7 @@ uint32_t CycleMQTT = 0;
 #define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
 #define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
 #define FAST_CLASSIFY     0
+#define NOT_FAST_DELAY_TIME  3000  // delay time for continuous
 
 #define SHOW_WIDTH  96
 #define SHOW_HEIGHT 96
@@ -64,8 +65,8 @@ uint32_t CycleMQTT = 0;
 
 typedef struct {
 	uint32_t timing;
-	float score[EI_CLASSIFIER_MAX_LABELS_COUNT];
-	uint8_t label[EI_CLASSIFIER_MAX_LABELS_COUNT];
+	float score[EI_CLASSIFIER_MAX_OBJECT_DETECTION_COUNT];
+	uint8_t label[EI_CLASSIFIER_MAX_OBJECT_DETECTION_COUNT];
   uint8_t finallabel;
 } MULTI_ID_RESULT;
 
@@ -103,8 +104,6 @@ void setup_wifi() {
   Serial.print("\nWiFi Connected.  IP Address: ");
   Serial.println(WiFi.localIP());
 }
-
-
  
 //MQTT callback for subscrib CloudTopic:"frank/Clould_to_Edge"
 void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
@@ -123,11 +122,14 @@ void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
 boolean mqtt_nonblock_reconnect() {
   boolean doConn = false;
   if (! mqttClient.connected()) {
+    Serial.printf("MQTT Client [%s] Connection LOST line 125 !\n", clientId);
     boolean isConn = mqttClient.connect(clientId);
     //boolean isConn = mqttClient.connect(clientId, MQTT_USER, MQTT_PASSWORD);
     Serial.printf("MQTT Client [%s] Connect %s !\n", clientId, (isConn ? "Successful" : "Failed"));
     // subscribe
     mqttClient.subscribe(CloudTopic);
+  } else {
+    Serial.printf("MQTT Client [%s] Connection OK 132 !\n", clientId);
   }
   return doConn;
 }
@@ -136,6 +138,9 @@ boolean mqtt_nonblock_reconnect() {
 void MQTT_picture() {
   uint32_t EndTime;
   char* logIsPublished;
+
+  // loop for subscribe first...
+  mqttClient.loop();
 
   StartTimeMQTT = millis();
   if (! mqttClient.connected()) {
@@ -164,10 +169,16 @@ void MQTT_picture() {
 
     boolean isPublished = mqttClient.endPublish();
     if (isPublished)
-      logIsPublished = "  Publishing Photo to MQTT Successfully !";
+      logIsPublished = "  Publishing Photo to MQTT OK !";
     else
       logIsPublished = "  Publishing Photo to MQTT Failed !";
   }
+
+  if (! mqttClient.connected()) {
+    // client loses its connection
+    Serial.printf("MQTT Client [%s] Connection LOST 179 !\n", clientId);
+  }
+
   Serial.println(logIsPublished);
   EndTime = millis();
   Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
@@ -259,6 +270,8 @@ void loop() {
     return;
   }
 
+  mqttClient.loop();
+
   //Serial.println("Start show screen.");
   //StartTime = micros(); //millis();
   showScreen(fb, TFT_YELLOW);
@@ -310,7 +323,7 @@ void identify(camera_fb_t *fb) {
 #else //#if BTN_CONTROL == true  
   //delay for next loop.
 #if FAST_CLASSIFY != 1
-  uint16_t delayTime = 6000;
+  uint16_t delayTime = NOT_FAST_DELAY_TIME;
   Serial.printf("Finish classify, wait for %d ms to next loop.\n\n\n", delayTime);
   delay(delayTime);
 #endif //#if FAST_CLASSIFY != 1
@@ -346,6 +359,9 @@ void multi_identify() {
   tft_drawtext(4, 4, "Start classify " + String(ID_COUNT_PER_BTN) + " times.", 1, FRANK_BLUE);
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   for (Index = 0; Index < ID_COUNT_PER_BTN; Index++) {
+    // loop for subscribe first...
+    mqttClient.loop();    
+
     //String result = classify(fb);
     fb = esp_camera_fb_get();
     if (!capture(fb)) {
@@ -456,6 +472,11 @@ String classify(camera_fb_t * fb) {
   // send pic via MQTT
   MQTT_picture();
 
+  if (! mqttClient.connected()) {
+    // client loses its connection
+    Serial.printf("MQTT Client [%s] Connection LOST line 468 !\n", clientId);
+  }
+
   // edge impulse classify
 //  Serial.println("  Run classifier...");
   // Feed signal to the classifier
@@ -531,12 +552,13 @@ bool capture(camera_fb_t * fb) {
   // Allocate rgb888_matrix buffer
   dl_matrix3du_t *rgb888_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
   //Serial.println("fmt2rgb888...");  
-  //fmt2rgb888(fb->buf, fb->len, fb->format, rgb888_matrix->item);
+  fmt2rgb888(fb->buf, fb->len, fb->format, rgb888_matrix->item);
 
+  // 這邊轉化有問題…圖片都變1/4 x 4，還有亂碼、上一張的內容…改回上面的fmt2rgb888 (變正常)
   //Serial.println("rgb565_to_888...");  
-  for (uint16_t i=0; i < fb->len; i+=2) {
-    rgb565_to_888( *((uint16_t *)fb->buf + i), (rgb888_matrix->item + (i>>1)*3) );
-  }
+  //for (uint16_t i=0; i < fb->len; i+=2) {
+  //  rgb565_to_888( *((uint16_t *)fb->buf + i), (rgb888_matrix->item + (i>>1)*3) );
+  //}
 
   resized_matrix = rgb888_matrix; // due to capture 96x96, no need to resize.
 
