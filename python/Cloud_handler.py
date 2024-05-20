@@ -47,9 +47,11 @@ def on_message(client, userdata, message):
 
     index+=1
     #filename = 's_%d.jpg' % index
-    filename = path + '\s_%d.bmp' % index
+    filename = path + '\\s_%d.bmp' % index
     time_start = time.time()
-    print('received from Edge: %s' % (datetime.datetime.now().strftime(ISOTIMEFORMAT)))
+    #print('received from Edge: %s' % (datetime.datetime.now().strftime(ISOTIMEFORMAT)))
+    print('received from Edge: [%s]: %s' % (message.payload, datetime.datetime.now().strftime(ISOTIMEFORMAT)))
+    '''
     f = open(filename,'wb+')
     f.write(message.payload)
     f.close()
@@ -78,9 +80,9 @@ def on_message(client, userdata, message):
     cv2.imshow('show in clould', img)
     key=cv2.waitKey(1)  # wait 1ms for keyboard...
     #cv2.destroyWindow('image')
-
+    '''
     #payload = 'C2E_' + str(index) + "_" + datetime.datetime.now().strftime(ISOTIMEFORMAT)
-    payload = 'C2E_' + str(index) + ", detectFace: %d, detectUbody: %d" % (detectFace, detectUbody)
+    payload = 'C2E_' + str(index) + ", detectFace: %d, detectUbody: %d" % (detectFace, detectUbody) #+ '\x00'
     client.publish(CloudTopic, payload)
     time_end = time.time()
     time_interval = time_end - time_start

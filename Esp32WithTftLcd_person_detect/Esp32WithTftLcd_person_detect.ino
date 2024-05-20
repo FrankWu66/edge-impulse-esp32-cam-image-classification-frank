@@ -20,6 +20,13 @@
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
+// Control macro
+#define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
+#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define FAST_CLASSIFY     0
+#define NOT_FAST_DELAY_TIME  5000  // delay time for continuous
+#define ON_LINE           true
+
 #define FRANK_RED TFT_BLUE
 #define FRANK_GREEN TFT_GREEN
 #define FRANK_CYAN TFT_YELLOW
@@ -50,11 +57,6 @@ uint32_t CycleMQTT = 0;
 
 #define BTN       4 // button (shared with flash led)
 
-#define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
-#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
-#define FAST_CLASSIFY     0
-#define NOT_FAST_DELAY_TIME  3000  // delay time for continuous
-
 #define SHOW_WIDTH  96
 #define SHOW_HEIGHT 96
 #define RGB565_SIZE SHOW_WIDTH*SHOW_HEIGHT*2
@@ -75,10 +77,8 @@ ei_impulse_result_t result = {0};
 
 uint8_t bmp96x96header[54] = {0x42, 0x4D, 0x36, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6C, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
-char clientId[50];
-void mqtt_callback(char* topic, byte* payload, unsigned int msgLength);
 WiFiClient wifiClient;
-PubSubClient mqttClient(mqtt_server, mqtt_port, mqtt_callback, wifiClient);
+PubSubClient mqttClient(wifiClient);
 
 int interruptPin = BTN;
 bool triggerClassify = false;
@@ -109,8 +109,14 @@ void setup_wifi() {
 void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
   uint32_t EndTime, time_interval;
 
-  CycleMQTT++;
-  Serial.printf ("received from Cloud: [%s]\n", payload);
+  //CycleMQTT++;
+  Serial.print("Received from Cloud : [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < msgLength; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
   EndTime = millis();
   Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
   time_interval = EndTime - StartTimeMQTT;
@@ -119,19 +125,26 @@ void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
 }
 
 //重新連線MQTT Server
-boolean mqtt_nonblock_reconnect() {
-  boolean doConn = false;
-  if (! mqttClient.connected()) {
-    Serial.printf("MQTT Client [%s] Connection LOST line 125 !\n", clientId);
-    boolean isConn = mqttClient.connect(clientId);
-    //boolean isConn = mqttClient.connect(clientId, MQTT_USER, MQTT_PASSWORD);
-    Serial.printf("MQTT Client [%s] Connect %s !\n", clientId, (isConn ? "Successful" : "Failed"));
-    // subscribe
-    mqttClient.subscribe(CloudTopic);
-  } else {
-    Serial.printf("MQTT Client [%s] Connection OK 132 !\n", clientId);
+void mqtt_reconnect() {
+  // Loop until we're reconnected
+  while (!mqttClient.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Create a random client ID
+    String clientId = "ESP32CAM_Client-";
+    clientId += String(random(0xffff), HEX);
+    // Attempt to connect
+    if (mqttClient.connect(clientId.c_str())) {
+      Serial.printf("connected (%s)\n", clientId.c_str());
+      // re-subscribe
+      mqttClient.subscribe(CloudTopic);
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" try again in 1 seconds");
+      // Wait 1 seconds before retrying
+      delay(1000);
+    }
   }
-  return doConn;
 }
 
 //MQTT傳遞照片，每N秒傳一次？未到N秒：option1 - wait for it.  option2 - skip it. ??
@@ -145,13 +158,14 @@ void MQTT_picture() {
   StartTimeMQTT = millis();
   if (! mqttClient.connected()) {
     // client loses its connection
-    Serial.printf("MQTT Client [%s] Connection LOST !\n", clientId);
-    mqtt_nonblock_reconnect();
+    Serial.printf("MQTT Client Connection LOST %d!\n", __LINE__);
+    mqtt_reconnect();
   }
 
   if (! mqttClient.connected())
     logIsPublished = "  No MQTT Connection, Photo NOT Published !";
   else {
+    /*
     int imgSize = 56+(96*96*3);
     int ps = MQTT_MAX_PACKET_SIZE;
     // start to publish the picture
@@ -172,16 +186,25 @@ void MQTT_picture() {
       logIsPublished = "  Publishing Photo to MQTT OK !";
     else
       logIsPublished = "  Publishing Photo to MQTT Failed !";
+    */
   }
+  //Serial.println(logIsPublished);
+  CycleMQTT++;
+  String pl = "hello world - ";
+  pl += String(CycleMQTT);
+  mqttClient.publish(EdgeTopic, pl.c_str());
+
+  mqttClient.loop();
 
   if (! mqttClient.connected()) {
     // client loses its connection
-    Serial.printf("MQTT Client [%s] Connection LOST 179 !\n", clientId);
+    Serial.printf("MQTT Client Connection LOST %d !\n", __LINE__);
+    mqtt_reconnect();
   }
 
-  Serial.println(logIsPublished);
   EndTime = millis();
   Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
+  mqttClient.loop();
 }
 
 // setup
@@ -250,11 +273,12 @@ void setup() {
   Serial.println("Camera Ready!...(standby, press button to start)");
   //tft_drawtext(4, 4, "Standby", 1, TFT_BLUE);
 
+#if ON_LINE == true
   //啟動WIFI連線
   setup_wifi();
-  sprintf(clientId, "ESP32CAM_%04X", random(0xffff));  // Create a random client ID
-  //啟動MQTT連線
-  mqtt_nonblock_reconnect();  
+  mqttClient.setServer(mqtt_server, mqtt_port);
+  mqttClient.setCallback(mqtt_callback);
+#endif
 }
 
 // main loop
@@ -262,15 +286,18 @@ void loop() {
   //uint32_t StartTime, EndTime;
   camera_fb_t *fb = NULL;
 
-  mqtt_nonblock_reconnect(); 
+#if ON_LINE == true
+  if (!mqttClient.connected()) {
+    mqtt_reconnect();
+  }
+  mqttClient.loop();
+#endif
 
   fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed");
     return;
   }
-
-  mqttClient.loop();
 
   //Serial.println("Start show screen.");
   //StartTime = micros(); //millis();
@@ -325,7 +352,14 @@ void identify(camera_fb_t *fb) {
 #if FAST_CLASSIFY != 1
   uint16_t delayTime = NOT_FAST_DELAY_TIME;
   Serial.printf("Finish classify, wait for %d ms to next loop.\n\n\n", delayTime);
-  delay(delayTime);
+  long tt,now;
+  tt = millis();
+  now = tt;
+  while (now - tt < delayTime) {
+    now = millis();
+    mqttClient.loop();
+  }
+  //delay(delayTime);
 #endif //#if FAST_CLASSIFY != 1
 //  tft.fillScreen(TFT_BLACK);
 //  Serial.println("Finish classify.\n");
@@ -359,8 +393,10 @@ void multi_identify() {
   tft_drawtext(4, 4, "Start classify " + String(ID_COUNT_PER_BTN) + " times.", 1, FRANK_BLUE);
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   for (Index = 0; Index < ID_COUNT_PER_BTN; Index++) {
+#if ON_LINE == true
     // loop for subscribe first...
-    mqttClient.loop();    
+    mqttClient.loop();
+#endif
 
     //String result = classify(fb);
     fb = esp_camera_fb_get();
@@ -372,8 +408,10 @@ void multi_identify() {
     showScreen(fb, TFT_YELLOW);
     signal.get_data = &raw_feature_get_data;
 
+#if ON_LINE == true
     // send pic via MQTT
     MQTT_picture();
+#endif
 
     // edge impulse classify
     res = run_classifier(&signal, &result, false /* debug */);
@@ -456,7 +494,7 @@ void multi_identify() {
 
 // classify labels
 String classify(camera_fb_t * fb) {
-//  int StartTime, EndTime;
+  int StartTime, EndTime;
   int index;
   uint16_t ResultColor = TFT_GREEN;
 
@@ -469,21 +507,23 @@ String classify(camera_fb_t * fb) {
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   signal.get_data = &raw_feature_get_data;
 
+#if ON_LINE == true
   // send pic via MQTT
   MQTT_picture();
 
   if (! mqttClient.connected()) {
     // client loses its connection
-    Serial.printf("MQTT Client [%s] Connection LOST line 468 !\n", clientId);
+    Serial.printf("MQTT Client Connection LOST line %d !\n", __LINE__);
   }
+#endif
 
   // edge impulse classify
 //  Serial.println("  Run classifier...");
   // Feed signal to the classifier
-//  StartTime = millis();
+  StartTime = millis();
   EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false /* debug */);
-//  EndTime = millis();
-//  Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
+  EndTime = millis();
+  Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
   // --- Free memory ---
   dl_matrix3du_free(resized_matrix);
 
