@@ -8,7 +8,9 @@ MqttBroker="127.0.0.1"
 #MqttBroker="mqtt.eclipseprojects.io"
 MqttPort=1883
 CloudTopic="frank/Clould_to_Edge"
-EdgeTopic="frank/Edge_to_Cloud"
+EdgeTopicPic="frank/Edge_to_Cloud/Pic"
+EdgeTopicCR="frank/Edge_to_Cloud/ClassifyResult"
+EdgeTopicPP="frank/Edge_to_Cloud/PicPerson"
 ISOTIMEFORMAT = '%H:%M:%S.%f'
 
 index = 0
@@ -61,16 +63,19 @@ while publish_count < 100:
     #hile True:
     index+=1
     publish_count += 1
-    if index > 6:
+    if index > 9:
         index = 1
-    #img=cv2.imread(str(index) + '.jpg')
-    img=cv2.imread('_1.bmp')
-    #byteArr = cv2.imencode('.jpg', img)[1].tobytes()
-    byteArr = cv2.imencode('.bmp', img)[1].tobytes()
+    img=cv2.imread(str(index) + '.jpg')
+    #img=cv2.imread('_1.bmp')
+    byteArr = cv2.imencode('.jpg', img)[1].tobytes()
+    #byteArr = cv2.imencode('.bmp', img)[1].tobytes()
     print ("send " + str(index) + ".jpg start:" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
     #time_start= time.time()
     time_start.append(time.time())
-    mqttc.publish(EdgeTopic, byteArr)
+    if index > 5:
+        mqttc.publish(EdgeTopicPic, byteArr)  # EdgeTopicPic EdgeTopicCR EdgeTopicPP
+    else:
+        mqttc.publish(EdgeTopicPP, byteArr)
     #print ("finish send" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
     time.sleep(1)
 

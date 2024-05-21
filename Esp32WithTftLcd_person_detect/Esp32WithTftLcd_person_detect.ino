@@ -22,9 +22,10 @@
 
 // Control macro
 #define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
-#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define ID_COUNT_PER_BTN  100     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define AUTO_BATCH_3X3    true    // 
 #define FAST_CLASSIFY     0
-#define NOT_FAST_DELAY_TIME  5000  // delay time for continuous
+#define NOT_FAST_DELAY_TIME  3000  // delay time for continuous
 #define ON_LINE           true
 
 #define FRANK_RED TFT_BLUE
@@ -41,9 +42,13 @@ const char* password = "12345678";
 //const char* mqtt_server = "mqtt.eclipseprojects.io";/
 //const char* mqtt_server = "mqttgo.io";
 const char* mqtt_server = "192.168.90.90";
+
 const unsigned int mqtt_port = 1883;
-#define CloudTopic    "frank/Clould_to_Edge"
-#define EdgeTopic     "frank/Edge_to_Cloud"
+#define CLOUD_TOPIC     "frank/Clould_to_Edge"
+//#define EdgeTopic     "frank/Edge_to_Cloud"
+#define EDGE_TOPIC_PIC  "frank/Edge_to_Cloud/Pic"
+#define EDGE_TOPIC_CR   "frank/Edge_to_Cloud/ClassifyResult"
+#define EDGE_TOPIC_PP   "frank/Edge_to_Cloud/PicPerson"
 uint32_t StartTimeMQTT;
 uint32_t TotalTimeMQTT = 0;
 uint32_t CycleMQTT = 0;
@@ -105,7 +110,7 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
  
-//MQTT callback for subscrib CloudTopic:"frank/Clould_to_Edge"
+//MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
 void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
   uint32_t EndTime, time_interval;
 
@@ -136,7 +141,7 @@ void mqtt_reconnect() {
     if (mqttClient.connect(clientId.c_str())) {
       Serial.printf("connected (%s)\n", clientId.c_str());
       // re-subscribe
-      mqttClient.subscribe(CloudTopic);
+      mqttClient.subscribe(CLOUD_TOPIC);
     } else {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());

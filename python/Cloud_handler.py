@@ -10,7 +10,10 @@ MqttBroker="127.0.0.1"
 #MqttBroker="mqtt.eclipseprojects.io"
 MqttPort=1883
 CloudTopic="frank/Clould_to_Edge"
-EdgeTopic="frank/Edge_to_Cloud"
+EdgeTopic="frank/Edge_to_Cloud/#"
+EdgeTopicPic="frank/Edge_to_Cloud/Pic"
+EdgeTopicCR="frank/Edge_to_Cloud/ClassifyResult"
+EdgeTopicPP="frank/Edge_to_Cloud/PicPerson"
 
 face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 ubody_cascade = cv2.CascadeClassifier("haarcascade_upperbody.xml")
@@ -18,10 +21,12 @@ ubody_cascade = cv2.CascadeClassifier("haarcascade_upperbody.xml")
 ISOTIMEFORMAT = '%H:%M:%S.%f'
 
 index = 0
+personCount = 0
 time_start = 0
 time_end = 0
+lastestTopic = EdgeTopicPic
 
-path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S')
+path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S_') + lastestTopic[20:]
 if not os.path.isdir(path):
     os.mkdir(path)
 
@@ -37,18 +42,14 @@ def on_connect(client, userdata, flags, reason_code, properties):
     #訂閱Edge傳來的TOPIC
     client.subscribe(EdgeTopic)
 
-#callback for receive subscribe update.
-def on_message(client, userdata, message):
-    global index
-    global time_start
-    global time_end
+def receive_and_save_pic (client, userdata, message):
+    global personCount
     detectFace = False
     detectUbody = False
 
-    index+=1
     #filename = 's_%d.jpg' % index
     filename = path + '\\s_%d.bmp' % index
-    time_start = time.time()
+
     print('received from Edge: %s' % (datetime.datetime.now().strftime(ISOTIMEFORMAT)))
     #print('received from Edge: [%s]: %s' % (message.payload, datetime.datetime.now().strftime(ISOTIMEFORMAT)))
     
@@ -81,14 +82,53 @@ def on_message(client, userdata, message):
     key=cv2.waitKey(1)  # wait 1ms for keyboard...
     #cv2.destroyWindow('image')
     
+    if detectFace or detectUbody:
+        personCount += 1
+
     #payload = 'C2E_' + str(index) + "_" + datetime.datetime.now().strftime(ISOTIMEFORMAT)
     payload = 'C2E_' + str(index) + ", detectFace: %d, detectUbody: %d" % (detectFace, detectUbody) #+ '\x00'
+    return payload
+
+
+#callback for receive subscribe update.
+def on_message(client, userdata, message):
+    global index
+    global personCount
+    global time_start
+    global time_end
+    global lastestTopic
+    global path
+
+    # reset index when change topic
+    if message.topic != lastestTopic:
+        index = 0
+        personCount = 0
+        lastestTopic = message.topic
+        path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S_') + lastestTopic[20:]
+        if not os.path.isdir(path):
+            os.mkdir(path)        
+
+    index+=1
+    time_start = time.time()
+
+    if message.topic == EdgeTopicPic:
+        #print ('EdgeTopicPic')
+        payload = receive_and_save_pic (client, userdata, message)
+    elif message.topic == EdgeTopicCR:
+        #print ('EdgeTopicCR')
+        payload = 'C2E_' + str(index) + ", got it."
+    elif message.topic == EdgeTopicPP:
+        #print ('EdgeTopicPP')
+        payload = receive_and_save_pic (client, userdata, message)
+        payload += ", accuracy: %.4f" % (personCount/index)
+
     client.publish(CloudTopic, payload)
     time_end = time.time()
     time_interval = time_end - time_start
     print ("finish send message:" + payload)
     print ('spend time (in cloud): %.6f' % time_interval)
     print (" ")
+
 
 '''
 #callback for receive subscribe update.
