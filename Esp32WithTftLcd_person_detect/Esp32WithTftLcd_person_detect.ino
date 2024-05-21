@@ -160,7 +160,7 @@ void MQTT_picture() {
   CycleMQTT++;
 
   // loop for subscribe first...
-  mqttClient.loop();
+  //mqttClient.loop();
 
   StartTimeMQTT = millis();
   if (! mqttClient.connected()) {
@@ -177,7 +177,7 @@ void MQTT_picture() {
     int ps = MQTT_MAX_PACKET_SIZE;
     int SendSize = 0;
     // start to publish the picture
-    mqttClient.beginPublish(EdgeTopic, imgSize, false);
+    mqttClient.beginPublish(EDGE_TOPIC_PIC, imgSize, false);
 
     // send 96x96 bmp file header (56 bytes)
     mqttClient.write(bmp96x96header, sizeof(bmp96x96header));
@@ -198,23 +198,8 @@ void MQTT_picture() {
   }
   Serial.println(logIsPublished);
 
-/*
-  String pl = "hello world - ";
-  pl += String(CycleMQTT);
-  mqttClient.publish(EdgeTopic, pl.c_str());
-*/
-
-  mqttClient.loop();
-
-  if (! mqttClient.connected()) {
-    // client loses its connection
-    Serial.printf("MQTT Client Connection LOST %d !\n", __LINE__);
-    mqtt_reconnect();
-  }
-
   EndTime = millis();
   Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
-  mqttClient.loop();
 }
 
 // setup
@@ -271,6 +256,8 @@ void setup() {
 
   sensor_t * s = esp_camera_sensor_get();
   // initial sensors are flipped vertically and colors are a bit saturated
+  s->set_hmirror(s, 1);//水平翻轉:(0或1)
+  s->set_vflip(s, 1);//垂直翻轉:(0或1)
   if (s->id.PID == OV3660_PID) {
     s->set_vflip(s, 1); // flip it back
     s->set_brightness(s, 1); // up the brightness just a bit
@@ -300,7 +287,6 @@ void loop() {
   if (!mqttClient.connected()) {
     mqtt_reconnect();
   }
-  mqttClient.loop();
 #endif
 
   fb = esp_camera_fb_get();
