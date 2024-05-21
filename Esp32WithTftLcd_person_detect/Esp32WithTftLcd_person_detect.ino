@@ -152,6 +152,8 @@ void MQTT_picture() {
   uint32_t EndTime;
   char* logIsPublished;
 
+  CycleMQTT++;
+
   // loop for subscribe first...
   mqttClient.loop();
 
@@ -165,9 +167,10 @@ void MQTT_picture() {
   if (! mqttClient.connected())
     logIsPublished = "  No MQTT Connection, Photo NOT Published !";
   else {
-    /*
-    int imgSize = 56+(96*96*3);
+    int imgSize = sizeof(bmp96x96header)+(96*96*3);
+    //int ps = (80 > MQTT_MAX_PACKET_SIZE) ? MQTT_MAX_PACKET_SIZE : 80;
     int ps = MQTT_MAX_PACKET_SIZE;
+    int SendSize = 0;
     // start to publish the picture
     mqttClient.beginPublish(EdgeTopic, imgSize, false);
 
@@ -177,8 +180,8 @@ void MQTT_picture() {
     // send RGB888 raw data
     imgSize = 96*96*3;
     for (int i = 0; i < imgSize; i += ps) {
-      int s = (imgSize - i < s) ? (imgSize - i) : ps;
-      mqttClient.write((uint8_t *)(resized_matrix->item) + i, s);
+      SendSize = (imgSize - i < ps) ? (imgSize - i) : ps;
+      mqttClient.write((uint8_t *)(resized_matrix->item) + i, SendSize);
     }
 
     boolean isPublished = mqttClient.endPublish();
@@ -186,13 +189,15 @@ void MQTT_picture() {
       logIsPublished = "  Publishing Photo to MQTT OK !";
     else
       logIsPublished = "  Publishing Photo to MQTT Failed !";
-    */
+    
   }
-  //Serial.println(logIsPublished);
-  CycleMQTT++;
+  Serial.println(logIsPublished);
+
+/*
   String pl = "hello world - ";
   pl += String(CycleMQTT);
   mqttClient.publish(EdgeTopic, pl.c_str());
+*/
 
   mqttClient.loop();
 
@@ -408,14 +413,13 @@ void multi_identify() {
     showScreen(fb, TFT_YELLOW);
     signal.get_data = &raw_feature_get_data;
 
+    // edge impulse classify
+    res = run_classifier(&signal, &result, false /* debug */);
+
 #if ON_LINE == true
     // send pic via MQTT
     MQTT_picture();
 #endif
-
-    // edge impulse classify
-    res = run_classifier(&signal, &result, false /* debug */);
-
     // --- Free memory ---
     dl_matrix3du_free(resized_matrix);
     if (res != 0) {
@@ -507,6 +511,14 @@ String classify(camera_fb_t * fb) {
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   signal.get_data = &raw_feature_get_data;
 
+  // edge impulse classify
+//  Serial.println("  Run classifier...");
+  // Feed signal to the classifier
+  StartTime = millis();
+  EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false /* debug */);
+  EndTime = millis();
+  Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
+
 #if ON_LINE == true
   // send pic via MQTT
   MQTT_picture();
@@ -515,15 +527,7 @@ String classify(camera_fb_t * fb) {
     // client loses its connection
     Serial.printf("MQTT Client Connection LOST line %d !\n", __LINE__);
   }
-#endif
-
-  // edge impulse classify
-//  Serial.println("  Run classifier...");
-  // Feed signal to the classifier
-  StartTime = millis();
-  EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false /* debug */);
-  EndTime = millis();
-  Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
+#endif  
   // --- Free memory ---
   dl_matrix3du_free(resized_matrix);
 
