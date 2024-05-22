@@ -39,9 +39,9 @@ const char* ssid = "iespmqtt";
 const char* password = "12345678";
 
 // ------ 以下修改成你MQTT設定 ------
-//const char* mqtt_server = "mqtt.eclipseprojects.io";/
-//const char* mqtt_server = "mqttgo.io";
-const char* mqtt_server = "192.168.90.90";
+const char* mqtt_serverEC = "mqtt.eclipseprojects.io";
+const char* mqtt_serverGO = "mqttgo.io";
+const char* mqtt_serverLC = "192.168.90.90";
 
 const unsigned int mqtt_port = 1883;
 #define CLOUD_TOPIC     "frank/Clould_to_Edge"
@@ -161,7 +161,7 @@ void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
   TimeIntervalAll = EndTime - StartTimeLoop;
   TotalTimeAll += TimeIntervalAll;
   Serial.printf ("    <loop %03d> spend time [ALL]: %d ms, avg time: %d ms; [MQTT]: %d ms, avg time: %d ms. [MQTT consume rate] %.4f: \n\n", 
-                    CycleMQTT, TimeIntervalAll, TotalTimeAll/CycleMQTT, TimeIntervalMQTT, TotalTimeMQTT/CycleMQTT, (float)TotalTimeMQTT/TotalTimeAll);
+                    CycleMQTT, TimeIntervalAll, TotalTimeAll/CycleMQTT, TimeIntervalMQTT, TotalTimeMQTT/CycleMQTT, (float)TotalTimeMQTT/(TotalTimeMQTT+TotalTimeAll) );
 }
 
 //MQTT傳遞照片，每N秒傳一次？未到N秒：option1 - wait for it.  option2 - skip it. ??
