@@ -20,19 +20,21 @@
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
 
-// Control macro
-#define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
-#define ID_COUNT_PER_BTN  100     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
-#define AUTO_BATCH_3X3    true    // 
-#define FAST_CLASSIFY     0
-#define NOT_FAST_DELAY_TIME  3000  // delay time for continuous
-#define ON_LINE           true
-
 #define FRANK_RED TFT_BLUE
 #define FRANK_GREEN TFT_GREEN
 #define FRANK_CYAN TFT_YELLOW
 #define FRANK_BLUE TFT_ORANGE
 #define FRANK_YELLOW TFT_CYAN
+
+// Control macro
+#define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
+#define ID_COUNT_PER_BTN  100     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define AUTO_BATCH_3X3    true    // 
+#define FAST_CLASSIFY     0
+#define ON_LINE           true
+
+#define LOOP_DELAY_TIME   3000  // delay time for continuous
+#define LOOP_COUNT        100   // test count for per MQTT broker and topic option
 
 // ------ 以下修改成你自己的WiFi帳號密碼 ------
 const char* ssid = "iespmqtt";
@@ -45,10 +47,16 @@ const char* mqtt_serverLC = "192.168.90.90";
 
 const unsigned int mqtt_port = 1883;
 #define CLOUD_TOPIC     "frank/Clould_to_Edge"
-//#define EdgeTopic     "frank/Edge_to_Cloud"
+// option 1: only send picture, do not classify     ==> SkipClassify:true,  SendMessageOnly:false
 #define EDGE_TOPIC_PIC  "frank/Edge_to_Cloud/Pic"
+// option 2: do classify, send result message only  ==> SkipClassify:false, SendMessageOnly:true
 #define EDGE_TOPIC_CR   "frank/Edge_to_Cloud/ClassifyResult"
+// option 3: do classify, only send person picture  ==> SkipClassify:false, SendMessageOnly:false
 #define EDGE_TOPIC_PP   "frank/Edge_to_Cloud/PicPerson"
+uint8_t TopicOption   = 1;
+bool SkipClassify     = false;
+bool SendMessageOnly  = false;
+
 uint32_t StartTimeLoop;
 uint32_t StartTimeMQTT;
 uint32_t TotalTimeAll = 0;  // need clear after change broker or topic
@@ -377,7 +385,7 @@ void identify(camera_fb_t *fb) {
 #else //#if BTN_CONTROL == true  
   //delay for next loop.
 #if FAST_CLASSIFY != 1
-  uint16_t delayTime = NOT_FAST_DELAY_TIME;
+  uint16_t delayTime = LOOP_DELAY_TIME;
   Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleMQTT, delayTime);
   long tt,now;
   tt = millis();
