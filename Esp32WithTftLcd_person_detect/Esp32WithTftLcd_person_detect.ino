@@ -49,9 +49,11 @@ const unsigned int mqtt_port = 1883;
 #define EDGE_TOPIC_PIC  "frank/Edge_to_Cloud/Pic"
 #define EDGE_TOPIC_CR   "frank/Edge_to_Cloud/ClassifyResult"
 #define EDGE_TOPIC_PP   "frank/Edge_to_Cloud/PicPerson"
+uint32_t StartTimeLoop;
 uint32_t StartTimeMQTT;
-uint32_t TotalTimeMQTT = 0;
-uint32_t CycleMQTT = 0;
+uint32_t TotalTimeAll = 0;  // need clear after change broker or topic
+uint32_t TotalTimeMQTT = 0; // need clear after change broker or topic
+uint32_t CycleMQTT = 0;     // need clear after change broker or topic
 
 #define TFT_SCLK 14 // SCL
 #define TFT_MOSI 13 // SDA
@@ -77,12 +79,18 @@ typedef struct {
   uint8_t finallabel;
 } MULTI_ID_RESULT;
 
-dl_matrix3du_t *resized_matrix = NULL;
+//dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
 
 //uint8_t bmp96x96header[54] = {0x42, 0x4D, 0x36, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6C, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 // set BMP height to negative to convert image  offset 0x16 [60 00 00 00] - > [A0 FF FF FF]
 uint8_t bmp96x96header[54] = {0x42, 0x4D, 0x36, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0xA0, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6C, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+uint32_t RGB888BufferSize = 96*96*3;
+uint32_t RGB565BufferSize = 96*96*2;
+uint32_t BmpBufferSize = RGB888BufferSize + 54;
+uint8_t *BmpBuffer = (uint8_t *) malloc(54+96*96*3);  // for MQTT send BMP data to Cloud, never free it.
+uint8_t *RGB888Buffer = BmpBuffer + 54;  // for classify
+uint8_t *RGB565Buffer = (uint8_t *) malloc(96*96*2);  // for TFT_eSPI tft.pushImage, never free it.
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -111,25 +119,6 @@ void setup_wifi() {
   Serial.print("\nWiFi Connected.  IP Address: ");
   Serial.println(WiFi.localIP());
 }
- 
-//MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
-void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
-  uint32_t EndTime, time_interval;
-
-  //CycleMQTT++;
-  Serial.print("Received from Cloud : [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < msgLength; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
-  EndTime = millis();
-  Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
-  time_interval = EndTime - StartTimeMQTT;
-  TotalTimeMQTT += time_interval;
-  Serial.printf ("spend time (total): %d ms, count:%03d, avg time: %d ms\n\n", time_interval, CycleMQTT, TotalTimeMQTT/CycleMQTT);
-}
 
 //重新連線MQTT Server
 void mqtt_reconnect() {
@@ -154,6 +143,27 @@ void mqtt_reconnect() {
   }
 }
 
+//MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
+void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
+  uint32_t EndTime, TimeIntervalMQTT, TimeIntervalAll;
+
+  //CycleMQTT++;
+  Serial.print("    Received from Cloud : [");
+  Serial.print(topic);
+  Serial.print("] msg: <<");
+  for (int i = 0; i < msgLength; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println(">>");
+  EndTime = millis();
+  TimeIntervalMQTT = EndTime - StartTimeMQTT;
+  TotalTimeMQTT += TimeIntervalMQTT;
+  TimeIntervalAll = EndTime - StartTimeLoop;
+  TotalTimeAll += TimeIntervalAll;
+  Serial.printf ("    <loop %03d> spend time [ALL]: %d ms, avg time: %d ms; [MQTT]: %d ms, avg time: %d ms. [MQTT consume rate] %.4f: \n\n", 
+                    CycleMQTT, TimeIntervalAll, TotalTimeAll/CycleMQTT, TimeIntervalMQTT, TotalTimeMQTT/CycleMQTT, (float)TotalTimeMQTT/TotalTimeAll);
+}
+
 //MQTT傳遞照片，每N秒傳一次？未到N秒：option1 - wait for it.  option2 - skip it. ??
 void MQTT_picture() {
   uint32_t EndTime;
@@ -174,34 +184,36 @@ void MQTT_picture() {
   if (! mqttClient.connected())
     logIsPublished = "  No MQTT Connection, Photo NOT Published !";
   else {
-    int imgSize = sizeof(bmp96x96header)+(96*96*3);
+    int imgSize = BmpBufferSize;
     //int ps = (80 > MQTT_MAX_PACKET_SIZE) ? MQTT_MAX_PACKET_SIZE : 80;
     int ps = MQTT_MAX_PACKET_SIZE;
     int SendSize = 0;
     // start to publish the picture
     mqttClient.beginPublish(EDGE_TOPIC_PIC, imgSize, false);
 
+    /*
     // send 96x96 bmp file header (56 bytes)
     mqttClient.write(bmp96x96header, sizeof(bmp96x96header));
 
     // send RGB888 raw data
     imgSize = 96*96*3;
+    */
     for (int i = 0; i < imgSize; i += ps) {
       SendSize = (imgSize - i < ps) ? (imgSize - i) : ps;
-      mqttClient.write((uint8_t *)(resized_matrix->item) + i, SendSize);
+      mqttClient.write(BmpBuffer + i, SendSize);
     }
 
     boolean isPublished = mqttClient.endPublish();
     if (isPublished)
-      logIsPublished = "  Publishing Photo to MQTT OK !";
+      logIsPublished = "MQTT_picture() Publishing OK !";
     else
-      logIsPublished = "  Publishing Photo to MQTT Failed !";
+      logIsPublished = "MQTT_picture() Publishing Failed !";
     
   }
-  Serial.println(logIsPublished);
+  Serial.print(logIsPublished);
 
   EndTime = millis();
-  Serial.printf("MQTT_picture() spend time: %d ms\n", EndTime - StartTimeMQTT);
+  Serial.printf("   Spend time: %d ms\n", EndTime - StartTimeMQTT);
 }
 
 // setup
@@ -243,8 +255,9 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_RGB565;
-  //config.pixel_format = PIXFORMAT_RGB565;  //FRAMESIZE_QQVGA  //FRAMESIZE_240X240
-  //config.frame_size =  FRAMESIZE_240X240;
+  //config.pixel_format = PIXFORMAT_RGB565; // PIXFORMAT_RGB888 (x) // PIXFORMAT_JPEG
+  // Note: only support: PIXFORMAT_GRAYSCALE / PIXFORMAT_GRAYSCALE / PIXFORMAT_RGB565 / PIXFORMAT_JPEG
+  //config.frame_size =  FRAMESIZE_240X240; //FRAMESIZE_QQVGA (160x120)  //FRAMESIZE_240X240
   config.frame_size =  FRAMESIZE_96X96;
   config.jpeg_quality = 10;
   config.fb_count = 2;
@@ -265,6 +278,9 @@ void setup() {
     s->set_brightness(s, 1); // up the brightness just a bit
     s->set_saturation(s, 0); // lower the saturation
   }
+
+  // fill BMP header to BmpBuffer
+  memcpy (BmpBuffer, bmp96x96header, sizeof(bmp96x96header));
 
   // set interrupt service routine for button (GPIO 4), trigger: LOW/HIGH/CHANGE/RISING/FALLING, FALLING: when release button 
   attachInterrupt(digitalPinToInterrupt(interruptPin), isr_Callback, FALLING);  
@@ -291,6 +307,8 @@ void loop() {
   }
 #endif
 
+  StartTimeLoop = millis();
+
   fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed");
@@ -308,21 +326,22 @@ void loop() {
   identify(fb);
   esp_camera_fb_return(fb);
 #else
-  esp_camera_fb_return(fb);
+  esp_camera_fb_return(fb);  // clear first is requirement!
   multi_identify();
 #endif
 }
 
 void showScreen(camera_fb_t *fb, uint16_t color) {
   //int StartTime, EndTime;
-  tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)fb->buf);
+  //tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)fb->buf);
+  tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)RGB565Buffer);
 }
 
 void identify(camera_fb_t *fb) {
   uint32_t StartTime, EndTime;
   
   // capture a image and classify it
-#if BTN_CONTROL == true  
+#if BTN_CONTROL == true
   if (triggerClassify) {
 #endif    
 //    Serial.println("Start classify.");
@@ -333,8 +352,18 @@ void identify(camera_fb_t *fb) {
 
     // display result
     //Serial.printf("Result: %s\n", result);
-    Serial.printf("Result: "); Serial.print(result); Serial.printf(", %d ms\n", EndTime - StartTime);
+    Serial.printf("End classify. Result: << "); Serial.print(result); Serial.printf(" >>,  spend time: %d ms\n", EndTime - StartTime);
     //tft_drawtext(4, 128 - 8, result, 1, TFT_GREEN /*ST77XX_GREEN*/);
+
+#if ON_LINE == true
+  // send pic via MQTT
+  MQTT_picture();
+
+  if (! mqttClient.connected()) {
+    // client loses its connection
+    Serial.printf("MQTT Client Connection LOST line %d !\n", __LINE__);
+  }
+#endif  
 
 #if BTN_CONTROL == true  
     // wait for next press button to continue show screen
@@ -349,7 +378,7 @@ void identify(camera_fb_t *fb) {
   //delay for next loop.
 #if FAST_CLASSIFY != 1
   uint16_t delayTime = NOT_FAST_DELAY_TIME;
-  Serial.printf("Finish classify, wait for %d ms to next loop.\n\n\n", delayTime);
+  Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleMQTT, delayTime);
   long tt,now;
   tt = millis();
   now = tt;
@@ -391,6 +420,8 @@ void multi_identify() {
   tft_drawtext(4, 4, "Start classify " + String(ID_COUNT_PER_BTN) + " times.", 1, FRANK_BLUE);
   signal.total_length = EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_WIDTH;
   for (Index = 0; Index < ID_COUNT_PER_BTN; Index++) {
+    StartTimeLoop = millis();
+
 #if ON_LINE == true
     // loop for subscribe first...
     mqttClient.loop();
@@ -409,12 +440,8 @@ void multi_identify() {
     // edge impulse classify
     res = run_classifier(&signal, &result, false /* debug */);
 
-#if ON_LINE == true
-    // send pic via MQTT
-    MQTT_picture();
-#endif
     // --- Free memory ---
-    dl_matrix3du_free(resized_matrix);
+  //  dl_matrix3du_free(resized_matrix);
     if (res != 0) {
       Serial.printf("error occur in identify index: %d\n", Index);
       continue;
@@ -450,6 +477,11 @@ void multi_identify() {
     if (Index % 10 == 0) {Serial.printf("  [%02d] :", Index);}
     //Serial.print("*");
     Serial.printf("%d", LabelIndex);
+
+#if ON_LINE == true
+    // send pic via MQTT
+    MQTT_picture();
+#endif
   } // for (Index = 0;
 
   tmp = 0;
@@ -507,22 +539,13 @@ String classify(camera_fb_t * fb) {
   // edge impulse classify
 //  Serial.println("  Run classifier...");
   // Feed signal to the classifier
-  StartTime = millis();
+  //StartTime = millis();
   EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false /* debug */);
-  EndTime = millis();
-  Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
+  //EndTime = millis();
+  //Serial.printf("  run_classifier() spend time: %d ms\n", EndTime - StartTime);
 
-#if ON_LINE == true
-  // send pic via MQTT
-  MQTT_picture();
-
-  if (! mqttClient.connected()) {
-    // client loses its connection
-    Serial.printf("MQTT Client Connection LOST line %d !\n", __LINE__);
-  }
-#endif  
   // --- Free memory ---
-  dl_matrix3du_free(resized_matrix);
+//  dl_matrix3du_free(resized_matrix);
 
   // --- Returned error variable "res" while data object.array in "result" ---
 //  ei_printf("run_classifier returned: %d\n", res);
@@ -533,13 +556,14 @@ String classify(camera_fb_t * fb) {
 //            result.timing.dsp, result.timing.classification, result.timing.anomaly);
 //  int index;
   float score = 0.0;
+  ei_printf("Classify score:");
   for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
     // record the most possible label
     if (result.classification[ix].value > score) {
       score = result.classification[ix].value;
       index = ix;
     }
-    ei_printf("    %s: %f;", result.classification[ix].label, result.classification[ix].value);
+    ei_printf("  # %s: %f;", result.classification[ix].label, result.classification[ix].value);
 //    tft_drawtext(4, 12 + 8 * ix, String(result.classification[ix].label) + " " + String(result.classification[ix].value * 100) + "%", 1, TFT_ORANGE /*ST77XX_ORANGE*/);
   }
   ei_printf("\n");
@@ -587,24 +611,47 @@ bool capture(camera_fb_t * fb) {
   // --- Convert frame to RGB888  ---
   //Serial.println("Converting to RGB888...");
   // Allocate rgb888_matrix buffer
-  dl_matrix3du_t *rgb888_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
+//  dl_matrix3du_t *rgb888_matrix = dl_matrix3du_alloc(1, fb->width, fb->height, 3);
   //Serial.println("fmt2rgb888...");  
 //  fmt2rgb888(fb->buf, fb->len, fb->format, rgb888_matrix->item);  // 不明原因圖片反轉！ -> BMP檔本來就反轉…
 
   // 這邊轉化有問題…圖片都變1/4 x 4，還有亂碼、上一張的內容…改回上面的fmt2rgb888 (變正常)
   //Serial.println("rgb565_to_888...");  
   //Serial.printf("fb->len %d !\n", fb->len);  // len=18432=96x96x2
+  /*
   for (uint16_t i=0; i < fb->len; i+=2) {
     rgb565_to_888( *((uint16_t *)(fb->buf + i)), (rgb888_matrix->item + (i>>1)*3) );  //仍然反轉？ MQTT問題？ -> BMP檔本來就反轉…
-    if (i < 13) {
-      Serial.printf("%02x %02x %02x ", *(rgb888_matrix->item + (i>>1)*3 + 0 ), *(rgb888_matrix->item + (i>>1)*3 + 1 ), *(rgb888_matrix->item + (i>>1)*3 + 2 ) );
-    }
-  }Serial.println("");
+  }
+  */
 
-  resized_matrix = rgb888_matrix; // due to capture 96x96, no need to resize.
+//  resized_matrix = rgb888_matrix; // due to capture 96x96, no need to resize.
 
 // --- Free memory ---
 //  dl_matrix3du_free(rgb888_matrix);  // don't free rgb888_matrix due to it assign to resized_matrix and resized_matrix will be free in up function.
+
+/* because ESP32 not support PIXFORMAT_RGB888 ... so discard this region
+  // 1. copy fb to RGB888Buffer
+  if (RGB888BufferSize != fb->len) {
+    Serial.printf("!!! RGB888BufferSize:%d != fb->len:%d !!!\n", RGB888BufferSize, fb->len);
+  }
+  memcpy(RGB888Buffer, fb->buf, fb->len);
+
+  // 2. transfer RGB565 to RGB565Buffer
+  for (uint16_t i=0; i < RGB888BufferSize; i+=3) {
+    rgb888_to_565( ((uint16_t *)RGB565Buffer + i/3), RGB888Buffer[i], RGB888Buffer[i+1], RGB888Buffer[i+2] );
+  }
+*/
+
+  // 1. copy fb to RGB565Buffer
+  if (RGB565BufferSize != fb->len) {
+    Serial.printf("!!! RGB565BufferSize:%d != fb->len:%d !!!\n", RGB565BufferSize, fb->len);
+  }
+  memcpy(RGB565Buffer, fb->buf, fb->len);
+
+  // 2. transfer RGB888 to RGB888Buffer
+  for (uint16_t i=0; i < RGB565BufferSize; i+=2) {
+    rgb565_to_888( *((uint16_t *)(RGB565Buffer + i)), (RGB888Buffer + (i>>1)*3) );  //仍然反轉？ MQTT問題？ -> BMP檔本來就反轉…
+  }
 
   return true;
 }
@@ -619,9 +666,14 @@ int raw_feature_get_data(size_t offset, size_t out_len, float *signal_ptr) {
   while (bytes_left != 0) {
     // grab the values and convert to r/g/b
     uint8_t r, g, b;
+    /*
     r = resized_matrix->item[pixel_ix];
     g = resized_matrix->item[pixel_ix + 1];
     b = resized_matrix->item[pixel_ix + 2];
+    */
+    r = RGB888Buffer[pixel_ix];
+    g = RGB888Buffer[pixel_ix + 1];
+    b = RGB888Buffer[pixel_ix + 2];
 
     // then convert to out_ptr format
     float pixel_f = (r << 16) + (g << 8) + b;
