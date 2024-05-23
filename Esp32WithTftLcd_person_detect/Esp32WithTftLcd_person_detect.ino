@@ -28,10 +28,10 @@
 
 // Control macro
 #define BTN_CONTROL       false   // true: use button to capture and classify; false: loop to capture and classify.
-#define ID_COUNT_PER_BTN  100     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
+#define ID_COUNT_PER_BTN  1     // identify count when press button, BTN_CONTROL need set to true; set to 1 as default
 #define AUTO_BATCH_3X3    true    // 
 #define FAST_CLASSIFY     0
-#define ON_LINE           true
+//#define ON_LINE           true
 
 #define LOOP_DELAY_TIME   3000  // delay time for continuous
 #define LOOP_COUNT        100   // test count for per MQTT broker and topic option
@@ -41,27 +41,34 @@ const char* ssid = "iespmqtt";
 const char* password = "12345678";
 
 // ------ 以下修改成你MQTT設定 ------
-const char* mqtt_serverEC = "mqtt.eclipseprojects.io";
-const char* mqtt_serverGO = "mqttgo.io";
-const char* mqtt_serverLC = "192.168.90.90";
+#define MQTT_BROKER_LOCAL   "192.168.90.90"
+#define MQTT_BROKER_MQTTGO  "mqttgo.io"
+#define MQTT_BROKER_ECLIPSE "mqtt.eclipseprojects.io"
 
-const unsigned int mqtt_port = 1883;
-#define CLOUD_TOPIC     "frank/Clould_to_Edge"
-// option 1: only send picture, do not classify     ==> SkipClassify:true,  SendMessageOnly:false
-#define EDGE_TOPIC_PIC  "frank/Edge_to_Cloud/Pic"
-// option 2: do classify, send result message only  ==> SkipClassify:false, SendMessageOnly:true
-#define EDGE_TOPIC_CR   "frank/Edge_to_Cloud/ClassifyResult"
-// option 3: do classify, only send person picture  ==> SkipClassify:false, SendMessageOnly:false
-#define EDGE_TOPIC_PP   "frank/Edge_to_Cloud/PicPerson"
-uint8_t TopicOption   = 1;
-bool SkipClassify     = false;
-bool SendMessageOnly  = false;
+#define MQTT_PORT           1883
+
+#define CLOUD_TOPIC         "frank/Clould_to_Edge"
+// option 1: only send picture, do not classify 
+#define EDGE_TOPIC_OP1_PIC  "frank/Edge_to_Cloud/Pic"
+// option 2: do classify, send result message only
+#define EDGE_TOPIC_OP2_CR   "frank/Edge_to_Cloud/ClassifyResult"
+// option 3: do classify, only send person picture
+#define EDGE_TOPIC_OP3_PP   "frank/Edge_to_Cloud/PicPerson"
+
+char* mqtt_broker[3]        = {MQTT_BROKER_LOCAL, MQTT_BROKER_MQTTGO, MQTT_BROKER_ECLIPSE};
+char* mqtt_EdgeTopic[3]     = {EDGE_TOPIC_OP1_PIC, EDGE_TOPIC_OP2_CR, EDGE_TOPIC_OP3_PP};
+uint8_t BrokerIndex         = 0;
+uint8_t TopicOptionIndex    = 0;
+bool PersonDetect           = false;
 
 uint32_t StartTimeLoop;
 uint32_t StartTimeMQTT;
+uint32_t MqttSendTime;
+uint32_t ClassifyTime;
 uint32_t TotalTimeAll = 0;  // need clear after change broker or topic
 uint32_t TotalTimeMQTT = 0; // need clear after change broker or topic
-uint32_t CycleMQTT = 0;     // need clear after change broker or topic
+uint32_t CycleCount = 0;    // need clear after change broker or topic
+uint32_t MqttCount = 0;     // need clear after change broker or topic
 
 #define TFT_SCLK 14 // SCL
 #define TFT_MOSI 13 // SDA
@@ -132,7 +139,7 @@ void setup_wifi() {
 void mqtt_reconnect() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
-    Serial.print("Attempting MQTT connection...");
+    Serial.printf("Attempting MQTT connection...broker: %s", mqtt_broker[BrokerIndex]);
     // Create a random client ID
     String clientId = "ESP32CAM_Client-";
     clientId += String(random(0xffff), HEX);
@@ -151,11 +158,26 @@ void mqtt_reconnect() {
   }
 }
 
+//Report loop date, separate here for called by option3 + non-person
+void ReportLoop (bool skipMQTT) {
+  uint32_t EndTime=0, TimeIntervalMQTT=0, TimeIntervalAll=0;
+
+  EndTime = millis();
+  if (skipMQTT != true) {
+    TimeIntervalMQTT = EndTime - StartTimeMQTT;
+    TotalTimeMQTT += TimeIntervalMQTT;
+  }
+  TimeIntervalAll = EndTime - StartTimeLoop;
+  TotalTimeAll += TimeIntervalAll;
+  Serial.printf ("    <loop %03d> spend time [loop]: %d ms, avg time: %d ms; [MQTT]: %d ms, avg time: %d ms. [MQTT consume rate] %.4f\n", 
+                    CycleCount, TimeIntervalAll, TotalTimeAll/CycleCount, TimeIntervalMQTT, TotalTimeMQTT/MqttCount, (float)TotalTimeMQTT/TotalTimeAll );
+  Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f\n\n",
+                  BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,TotalTimeMQTT/MqttCount,(float)TotalTimeMQTT/TotalTimeAll);
+}
+
 //MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
 void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
-  uint32_t EndTime, TimeIntervalMQTT, TimeIntervalAll;
-
-  //CycleMQTT++;
+  MqttCount++;
   Serial.print("    Received from Cloud : [");
   Serial.print(topic);
   Serial.print("] msg: <<");
@@ -163,24 +185,13 @@ void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
     Serial.print((char)payload[i]);
   }
   Serial.println(">>");
-  EndTime = millis();
-  TimeIntervalMQTT = EndTime - StartTimeMQTT;
-  TotalTimeMQTT += TimeIntervalMQTT;
-  TimeIntervalAll = EndTime - StartTimeLoop;
-  TotalTimeAll += TimeIntervalAll;
-  Serial.printf ("    <loop %03d> spend time [ALL]: %d ms, avg time: %d ms; [MQTT]: %d ms, avg time: %d ms. [MQTT consume rate] %.4f: \n\n", 
-                    CycleMQTT, TimeIntervalAll, TotalTimeAll/CycleMQTT, TimeIntervalMQTT, TotalTimeMQTT/CycleMQTT, (float)TotalTimeMQTT/(TotalTimeMQTT+TotalTimeAll) );
+  ReportLoop(false);
 }
 
 //MQTT傳遞照片，每N秒傳一次？未到N秒：option1 - wait for it.  option2 - skip it. ??
 void MQTT_picture() {
   uint32_t EndTime;
   char* logIsPublished;
-
-  CycleMQTT++;
-
-  // loop for subscribe first...
-  //mqttClient.loop();
 
   StartTimeMQTT = millis();
   if (! mqttClient.connected()) {
@@ -197,7 +208,7 @@ void MQTT_picture() {
     int ps = MQTT_MAX_PACKET_SIZE;
     int SendSize = 0;
     // start to publish the picture
-    mqttClient.beginPublish(EDGE_TOPIC_PIC, imgSize, false);
+    mqttClient.beginPublish(mqtt_EdgeTopic[TopicOptionIndex], imgSize, false);
 
     /*
     // send 96x96 bmp file header (56 bytes)
@@ -221,7 +232,8 @@ void MQTT_picture() {
   Serial.print(logIsPublished);
 
   EndTime = millis();
-  Serial.printf("   Spend time: %d ms\n", EndTime - StartTimeMQTT);
+  MqttSendTime = EndTime - StartTimeMQTT;
+  Serial.printf("   Spend time: %d ms\n", MqttSendTime);
 }
 
 // setup
@@ -296,27 +308,33 @@ void setup() {
   Serial.println("Camera Ready!...(standby, press button to start)");
   //tft_drawtext(4, 4, "Standby", 1, TFT_BLUE);
 
-#if ON_LINE == true
   //啟動WIFI連線
   setup_wifi();
-  mqttClient.setServer(mqtt_server, mqtt_port);
+  mqttClient.setServer(mqtt_broker[BrokerIndex], MQTT_PORT);
   mqttClient.setCallback(mqtt_callback);
-#endif
+
+  // ########### setup 3(broker) x 3(option topic) from here ###########
+  BrokerIndex      = 0;
+  TopicOptionIndex = 0;
+  TopicOptionIndex = 0;
+  TotalTimeAll = 0;  // need clear after change broker or topic
+  TotalTimeMQTT = 0; // need clear after change broker or topic
+  CycleCount = 0;    // need clear after change broker or topic
+  MqttCount = 0;     // need clear after change broker or topic
+
+  Serial.printf("Wait for %d seconds to start tasks\n", 10);
+  for (int i=1; i<=10; i++) {
+    Serial.printf("%d - ", i);
+    delay(1000);
+  }
+  Serial.println("\n#CSV: BrokerIndex,TopicOptionIndex,loop,loop time,classify time,MQTT time,MQTT send time,loop avg. time,MQTT avg. time,MQTT consume rate");
+  Serial.println("\n");
 }
 
 // main loop
 void loop() {
   //uint32_t StartTime, EndTime;
   camera_fb_t *fb = NULL;
-
-#if ON_LINE == true
-  if (!mqttClient.connected()) {
-    mqtt_reconnect();
-  }
-#endif
-
-  StartTimeLoop = millis();
-
   fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed");
@@ -325,11 +343,13 @@ void loop() {
 
   //Serial.println("Start show screen.");
   //StartTime = micros(); //millis();
-  showScreen(fb, TFT_YELLOW);
+  //showScreen(fb, TFT_YELLOW);
   //EndTime = micros(); //millis();
   //Serial.printf("Show screen. spend time: %d ms\n", EndTime - StartTime);
   //Serial.printf("Show screen. spend time: %d.%d ms\n", (EndTime - StartTime)/1000, (EndTime - StartTime)%1000);
 
+// Note (2024/5/23): in this phase, I don't need to run this part, so comment it and do not debug/modify for  multi_identify()
+/*
 #if (ID_COUNT_PER_BTN == 1 || BTN_CONTROL == false)
   identify(fb);
   esp_camera_fb_return(fb);
@@ -337,7 +357,91 @@ void loop() {
   esp_camera_fb_return(fb);  // clear first is requirement!
   multi_identify();
 #endif
-}
+*/
+
+  // ########### process 3(broker) x 3(option topic) from here ###########
+  CycleCount++;
+
+  // block when all task done.
+  while (BrokerIndex >= 2 && TopicOptionIndex >= 2 && CycleCount > LOOP_COUNT) {
+    Serial.printf("## 3 broker x 3 topic option are all done.\nReset ESP32 CAM for next test!\n\n");
+    delay(10000);
+  }
+
+  // switch task here
+  if (CycleCount > LOOP_COUNT) {
+    if (TopicOptionIndex >= 2) {
+      BrokerIndex++;
+      TopicOptionIndex = 0;
+      // disconnect MQTT broker!
+      mqttClient.disconnect();
+      delay (10);
+    } else {
+      TopicOptionIndex++;
+    }
+
+    TotalTimeAll = 0;  // need clear after change broker or topic
+    TotalTimeMQTT = 0; // need clear after change broker or topic
+    CycleCount = 1;     // need clear after change broker or topic
+
+    mqttClient.setServer(mqtt_broker[BrokerIndex], MQTT_PORT);
+    mqttClient.setCallback(mqtt_callback);
+  }
+
+  if (!mqttClient.connected()) {
+    mqtt_reconnect();
+  }
+
+  MqttSendTime = 0;
+  ClassifyTime = 0;
+  StartTimeLoop = millis();
+  showScreen(fb, TFT_YELLOW);
+
+  // loop # start
+  Serial.printf("=[Loop #%03d for Broker: %s, Topic: %s, (topic option:%d)]=\n", CycleCount, mqtt_broker[BrokerIndex], mqtt_EdgeTopic[TopicOptionIndex], TopicOptionIndex + 1);
+  if (!capture(fb)) {
+    Serial.println ("\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! capture(fb) error !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n");
+    return;
+  }
+
+  switch (TopicOptionIndex) {
+    case 0:   // option 1: only send picture, do not classify
+      MQTT_picture();
+      break;
+    case 1:   // option 2: do classify, send result message only
+      identify(fb);
+      if (PersonDetect == true) {
+        mqttClient.publish(mqtt_EdgeTopic[TopicOptionIndex], "PersonDetect");
+      } else {
+        mqttClient.publish(mqtt_EdgeTopic[TopicOptionIndex], "Not Person");
+      }
+      break;
+    case 2:   // option 3: do classify, only send person picture
+      identify(fb);
+      // workaround here, force 50% person
+      PersonDetect = (CycleCount % 2 == 1);
+      if (PersonDetect == true) {
+        MQTT_picture();
+      } else {
+        // don't run MQTT, run ReportLoop directly
+        ReportLoop (true); // true: skipMQTT  
+      }
+      break;
+  }
+
+  esp_camera_fb_return(fb);
+
+  // delay for next loop & receive mqtt ... 
+  Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleCount, LOOP_DELAY_TIME);
+  long tt,now;
+  tt = millis();
+  now = tt;
+  while (now - tt < LOOP_DELAY_TIME) {
+    mqttClient.loop();  // spend around 43 us.
+    delay(10);  // delay 10 ms to prevent do too many time of mqttClient.loop()
+    now = millis();
+  }
+} // loop
 
 void showScreen(camera_fb_t *fb, uint16_t color) {
   //int StartTime, EndTime;
@@ -360,18 +464,9 @@ void identify(camera_fb_t *fb) {
 
     // display result
     //Serial.printf("Result: %s\n", result);
-    Serial.printf("End classify. Result: << "); Serial.print(result); Serial.printf(" >>,  spend time: %d ms\n", EndTime - StartTime);
+    ClassifyTime = EndTime - StartTime;
+    Serial.printf("End classify. Result: << "); Serial.print(result); Serial.printf(" >>,  spend time: %d ms\n", ClassifyTime);
     //tft_drawtext(4, 128 - 8, result, 1, TFT_GREEN /*ST77XX_GREEN*/);
-
-#if ON_LINE == true
-  // send pic via MQTT
-  MQTT_picture();
-
-  if (! mqttClient.connected()) {
-    // client loses its connection
-    Serial.printf("MQTT Client Connection LOST line %d !\n", __LINE__);
-  }
-#endif  
 
 #if BTN_CONTROL == true  
     // wait for next press button to continue show screen
@@ -385,15 +480,18 @@ void identify(camera_fb_t *fb) {
 #else //#if BTN_CONTROL == true  
   //delay for next loop.
 #if FAST_CLASSIFY != 1
+/*
   uint16_t delayTime = LOOP_DELAY_TIME;
-  Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleMQTT, delayTime);
+  Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleCount, delayTime);
   long tt,now;
   tt = millis();
   now = tt;
   while (now - tt < delayTime) {
+    mqttClient.loop();  // spend around 43 us.
+    delay(10);  // delay 10 ms to prevent do too many time of mqttClient.loop()
     now = millis();
-    mqttClient.loop();
   }
+*/
   //delay(delayTime);
 #endif //#if FAST_CLASSIFY != 1
 //  tft.fillScreen(TFT_BLACK);
@@ -405,6 +503,7 @@ void identify(camera_fb_t *fb) {
 //
 // In this function, independently run esp_camera_fb_get() and esp_camera_fb_return()
 //
+/*
 void multi_identify() {
   uint32_t Index;
   camera_fb_t *fb = NULL;
@@ -430,10 +529,8 @@ void multi_identify() {
   for (Index = 0; Index < ID_COUNT_PER_BTN; Index++) {
     StartTimeLoop = millis();
 
-#if ON_LINE == true
     // loop for subscribe first...
     mqttClient.loop();
-#endif
 
     //String result = classify(fb);
     fb = esp_camera_fb_get();
@@ -446,7 +543,7 @@ void multi_identify() {
     signal.get_data = &raw_feature_get_data;
 
     // edge impulse classify
-    res = run_classifier(&signal, &result, false /* debug */);
+    res = run_classifier(&signal, &result, false);  // false for debug
 
     // --- Free memory ---
   //  dl_matrix3du_free(resized_matrix);
@@ -486,10 +583,8 @@ void multi_identify() {
     //Serial.print("*");
     Serial.printf("%d", LabelIndex);
 
-#if ON_LINE == true
     // send pic via MQTT
     MQTT_picture();
-#endif
   } // for (Index = 0;
 
   tmp = 0;
@@ -499,6 +594,7 @@ void multi_identify() {
       TotalResult.finallabel = ix;
     }
   }
+  
 
   // print total score and result
   Serial.printf("\nEnd classify.\nTotal:\n\tavg. identify spend time: %d ms\n", TotalResult.timing/ID_COUNT_PER_BTN);
@@ -527,7 +623,8 @@ void multi_identify() {
     delay (200);
   }
   tft.fillScreen(TFT_BLACK);
-}
+} // void multi_identify() {
+*/
 
 // classify labels
 String classify(camera_fb_t * fb) {
@@ -536,7 +633,7 @@ String classify(camera_fb_t * fb) {
   uint16_t ResultColor = TFT_GREEN;
 
   // capture image from camera
-  if (!capture(fb)) return "Error";
+  //if (!capture(fb)) return "Error";
 //  tft_drawtext(4, 4, "Classifying...", 1, TFT_CYAN /*ST77XX_CYAN*/);
 
 //  Serial.println("  Getting image...");
@@ -608,6 +705,13 @@ String classify(camera_fb_t * fb) {
 #if EI_CLASSIFIER_HAS_ANOMALY == 1
   ei_printf("    anomaly score: %f\r\n", result.anomaly);
 #endif
+
+  // index 1 is person
+  if (index == 1) {
+    PersonDetect = true;
+  } else {
+    PersonDetect = false;
+  }
 
   // --- return the most possible label ---
   return String(result.classification[index].label);
