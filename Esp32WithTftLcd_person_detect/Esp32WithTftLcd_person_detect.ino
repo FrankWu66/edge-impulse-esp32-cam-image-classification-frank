@@ -33,7 +33,7 @@
 #define FAST_CLASSIFY     0
 //#define ON_LINE           true
 
-#define LOOP_DELAY_TIME   3000  // delay time for continuous
+#define LOOP_DELAY_TIME   6000  // delay time for continuous
 #define LOOP_COUNT        100   // test count for per MQTT broker and topic option
 
 // ------ 以下修改成你自己的WiFi帳號密碼 ------
@@ -60,6 +60,7 @@ char* mqtt_EdgeTopic[3]     = {EDGE_TOPIC_OP1_PIC, EDGE_TOPIC_OP2_CR, EDGE_TOPIC
 uint8_t BrokerIndex         = 0;
 uint8_t TopicOptionIndex    = 0;
 bool PersonDetect           = false;
+bool ReportReceived         = false;
 
 uint32_t StartTimeLoop;
 uint32_t StartTimeMQTT;
@@ -173,6 +174,7 @@ void ReportLoop (bool skipMQTT) {
                     CycleCount, TimeIntervalAll, TotalTimeAll/CycleCount, TimeIntervalMQTT, TotalTimeMQTT/MqttCount, (float)TotalTimeMQTT/TotalTimeAll );
   Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f\n\n",
                   BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,TotalTimeMQTT/MqttCount,(float)TotalTimeMQTT/TotalTimeAll);
+  ReportReceived = true;
 }
 
 //MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
@@ -361,6 +363,7 @@ void loop() {
 
   // ########### process 3(broker) x 3(option topic) from here ###########
   CycleCount++;
+  ReportReceived = false;
 
   // block when all task done.
   while (BrokerIndex >= 2 && TopicOptionIndex >= 2 && CycleCount > LOOP_COUNT) {
@@ -440,6 +443,10 @@ void loop() {
     mqttClient.loop();  // spend around 43 us.
     delay(10);  // delay 10 ms to prevent do too many time of mqttClient.loop()
     now = millis();
+    if (ReportReceived == true) {
+      delay(10); // skip wait for next loop since receive/finish MQTT report.
+      break;
+    }
   }
 } // loop
 
