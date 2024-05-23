@@ -5,8 +5,8 @@ import time
 import os
 import sys
 
-MqttBroker="127.0.0.1"
-#MqttBroker="mqttgo.io"
+#MqttBroker="127.0.0.1"
+MqttBroker="mqttgo.io"
 #MqttBroker="mqtt.eclipseprojects.io"
 MqttPort=1883
 CloudTopic="frank/Clould_to_Edge"
