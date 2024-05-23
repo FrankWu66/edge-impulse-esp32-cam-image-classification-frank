@@ -73,7 +73,7 @@ def receive_and_save_pic (client, userdata, message):
     if len(ubodys):
         detectUbody = True
     for (x, y, w, h) in ubodys:
-        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 1   # mark ubody by blue color
+        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 1)   # mark ubody by blue color
         cv2.putText(img, 'upper body', (x,y-5),cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255,0,0), 1, cv2.LINE_AA)
 
     #img=cv2.resize(img, (640, 480))

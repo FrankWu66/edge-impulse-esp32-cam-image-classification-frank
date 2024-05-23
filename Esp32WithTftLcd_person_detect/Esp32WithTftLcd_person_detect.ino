@@ -413,6 +413,7 @@ void loop() {
       break;
     case 1:   // option 2: do classify, send result message only
       identify(fb);
+      StartTimeMQTT = millis();
       if (PersonDetect == true) {
         mqttClient.publish(mqtt_EdgeTopic[TopicOptionIndex], "PersonDetect");
       } else {
