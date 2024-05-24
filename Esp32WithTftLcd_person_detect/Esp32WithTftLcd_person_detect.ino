@@ -163,7 +163,6 @@ void mqtt_reconnect() {
 void ReportLoop (bool skipMQTT) {
   uint32_t EndTime=0, TimeIntervalMQTT=0, TimeIntervalAll=0;
 
-  CycleCount++;
   EndTime = millis();
   if (skipMQTT != true) {
     TimeIntervalMQTT = EndTime - StartTimeMQTT;
@@ -176,6 +175,7 @@ void ReportLoop (bool skipMQTT) {
   Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f\n\n",
                   BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,TotalTimeMQTT/MqttCount,(float)TotalTimeMQTT/TotalTimeAll);
   ReportReceived = true;
+  CycleCount++;
 }
 
 //MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
@@ -319,7 +319,6 @@ void setup() {
   // ########### setup 3(broker) x 3(option topic) from here ###########
   BrokerIndex      = 0;
   TopicOptionIndex = 0;
-  TopicOptionIndex = 0;
   TotalTimeAll = 0;  // need clear after change broker or topic
   TotalTimeMQTT = 0; // need clear after change broker or topic
   CycleCount = 1;    // need clear after change broker or topic
@@ -386,7 +385,8 @@ void loop() {
 
     TotalTimeAll = 0;  // need clear after change broker or topic
     TotalTimeMQTT = 0; // need clear after change broker or topic
-    CycleCount = 1;     // need clear after change broker or topic
+    CycleCount = 1;    // need clear after change broker or topic
+    MqttCount = 0;     // need clear after change broker or topic
 
     mqttClient.setServer(mqtt_broker[BrokerIndex], MQTT_PORT);
     mqttClient.setCallback(mqtt_callback);
@@ -420,6 +420,7 @@ void loop() {
       } else {
         mqttClient.publish(mqtt_EdgeTopic[TopicOptionIndex], "Not Person");
       }
+      MqttSendTime = millis() - StartTimeMQTT;
       break;
     case 2:   // option 3: do classify, only send person picture
       identify(fb);
