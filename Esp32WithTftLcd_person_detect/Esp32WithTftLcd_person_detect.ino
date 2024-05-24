@@ -163,6 +163,7 @@ void mqtt_reconnect() {
 void ReportLoop (bool skipMQTT) {
   uint32_t EndTime=0, TimeIntervalMQTT=0, TimeIntervalAll=0;
 
+  CycleCount++;
   EndTime = millis();
   if (skipMQTT != true) {
     TimeIntervalMQTT = EndTime - StartTimeMQTT;
@@ -321,7 +322,7 @@ void setup() {
   TopicOptionIndex = 0;
   TotalTimeAll = 0;  // need clear after change broker or topic
   TotalTimeMQTT = 0; // need clear after change broker or topic
-  CycleCount = 0;    // need clear after change broker or topic
+  CycleCount = 1;    // need clear after change broker or topic
   MqttCount = 0;     // need clear after change broker or topic
 
   Serial.printf("Wait for %d seconds to start tasks\n", 10);
@@ -362,7 +363,7 @@ void loop() {
 */
 
   // ########### process 3(broker) x 3(option topic) from here ###########
-  CycleCount++;
+  //CycleCount++;  // move to report method, make sure not miss time counting
   ReportReceived = false;
 
   // block when all task done.

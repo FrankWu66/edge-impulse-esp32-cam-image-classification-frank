@@ -5,9 +5,9 @@ import time
 import os
 import sys
 
-MqttBroker="127.0.0.1"
-#MqttBroker="mqttgo.io"
-#MqttBroker="mqtt.eclipseprojects.io"
+MqttBrokerLocal="127.0.0.1"
+MqttBrokerMqttgo="mqttgo.io"
+MqttBrokerEclipse="mqtt.eclipseprojects.io"
 MqttPort=1883
 CloudTopic="frank/Clould_to_Edge"
 EdgeTopic="frank/Edge_to_Cloud/#"
@@ -76,9 +76,11 @@ def receive_and_save_pic (client, userdata, message):
         cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 1)   # mark ubody by blue color
         cv2.putText(img, 'upper body', (x,y-5),cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255,0,0), 1, cv2.LINE_AA)
 
+    cv2.imwrite(filename, img)
+
     #img=cv2.resize(img, (640, 480))
     img=cv2.resize(img, (576, 576))
-    cv2.imshow(MqttBroker, img)
+    cv2.imshow(message.topic, img)
     key=cv2.waitKey(1)  # wait 1ms for keyboard...
     #cv2.destroyWindow('image')
     
@@ -145,8 +147,20 @@ def on_message(client, userdata, message):
 '''
  
 #setting MQTT connect   
-mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-mqttc.on_connect = on_connect
-mqttc.on_message = on_message
-mqttc.connect(MqttBroker, MqttPort, 60)
-mqttc.loop_forever()
+mqttcLocal = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+mqttcLocal.on_connect = on_connect
+mqttcLocal.on_message = on_message
+mqttcLocal.connect(MqttBrokerLocal, MqttPort, 60)
+mqttcLocal.loop_start()
+
+mqttGo = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+mqttGo.on_connect = on_connect
+mqttGo.on_message = on_message
+mqttGo.connect(MqttBrokerMqttgo, MqttPort, 60)
+mqttGo.loop_start()
+
+mqttEc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+mqttEc.on_connect = on_connect
+mqttEc.on_message = on_message
+mqttEc.connect(MqttBrokerEclipse, MqttPort, 60)
+mqttEc.loop_forever()
