@@ -1,4 +1,5 @@
 #include <ImageNet_person_detect2_inferencing.h>
+#include "edge-impulse-sdk/dsp/image/image.hpp"
 
 //#include <person_detect_inferencing.h>
 //#include <esp32-cam-cat-dog_3_label_inferencing.h>
@@ -33,7 +34,8 @@
 #define FAST_CLASSIFY     0
 //#define ON_LINE           true
 
-#define LOOP_DELAY_TIME   6000  // delay time for continuous
+#define LOOP_DELAY_TIME   3000  // delay time for continuous
+#define REDUCE_POLLING_TIME   true   // if receive MQTT subscribe...skip delay for next loop
 #define LOOP_COUNT        100   // test count for per MQTT broker and topic option
 
 // ------ 以下修改成你自己的WiFi帳號密碼 ------
@@ -95,18 +97,28 @@ typedef struct {
   uint8_t finallabel;
 } MULTI_ID_RESULT;
 
+/* Function definitions ------------------------------------------------------- */
+bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf) ;
+void identify();
+String classify();
+
+/* Constant defines -------------------------------------------------------- */
+#define EI_CAMERA_RAW_FRAME_BUFFER_COLS           240
+#define EI_CAMERA_RAW_FRAME_BUFFER_ROWS           240
+
 //dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
 
 //uint8_t bmp96x96header[54] = {0x42, 0x4D, 0x36, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6C, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 // set BMP height to negative to convert image  offset 0x16 [60 00 00 00] - > [A0 FF FF FF]
 uint8_t bmp96x96header[54] = {0x42, 0x4D, 0x36, 0x6C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0xA0, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x6C, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x74, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-uint32_t RGB888BufferSize = 96*96*3;
-uint32_t RGB565BufferSize = 96*96*2;
-uint32_t BmpBufferSize = RGB888BufferSize + 54;
-uint8_t *BmpBuffer = (uint8_t *) malloc(54+96*96*3);  // for MQTT send BMP data to Cloud, never free it.
-uint8_t *RGB888Buffer = BmpBuffer + 54;  // for classify
-uint8_t *RGB565Buffer = (uint8_t *) malloc(96*96*2);  // for TFT_eSPI tft.pushImage, never free it.
+uint32_t RGB888BufferSize;
+uint32_t RGB565BufferSize;
+uint32_t BmpBufferSize;
+uint8_t *BmpBuffer = NULL;  // for MQTT send BMP data to Cloud, never free it.
+uint8_t *RGB888Buffer = NULL;  // for classify
+uint8_t *RGB565Buffer = NULL;  // for TFT_eSPI tft.pushImage, never free it.
+camera_fb_t * gfb = NULL;   // global fb, easy to use
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -239,6 +251,45 @@ void MQTT_picture() {
   Serial.printf("   Spend time: %d ms\n", MqttSendTime);
 }
 
+void MQTT_picture_JPG() {
+  uint32_t EndTime;
+  char* logIsPublished;
+
+  StartTimeMQTT = millis();
+  if (! mqttClient.connected()) {
+    // client loses its connection
+    Serial.printf("MQTT Client Connection LOST %d!\n", __LINE__);
+    mqtt_reconnect();
+  }
+
+  if (! mqttClient.connected())
+    logIsPublished = "  No MQTT Connection, Photo NOT Published !";
+  else {
+    int imgSize = gfb->len;
+    int ps = MQTT_MAX_PACKET_SIZE;
+    int SendSize = 0;
+    // start to publish the picture
+    mqttClient.beginPublish(mqtt_EdgeTopic[TopicOptionIndex], imgSize, false);
+
+    for (int i = 0; i < imgSize; i += ps) {
+      SendSize = (imgSize - i < ps) ? (imgSize - i) : ps;
+      mqttClient.write((uint8_t *)(gfb->buf) + i, SendSize);
+    }
+
+    boolean isPublished = mqttClient.endPublish();
+    if (isPublished)
+      logIsPublished = "MQTT_picture_JPG() Publishing OK !";
+    else
+      logIsPublished = "MQTT_picture_JPG() Publishing Failed !";
+    
+  }
+  Serial.print(logIsPublished);
+
+  EndTime = millis();
+  MqttSendTime = EndTime - StartTimeMQTT;
+  Serial.printf("   Spend time: %d ms\n", MqttSendTime);
+}
+
 // setup
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector
@@ -277,13 +328,13 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_RGB565;
+  config.pixel_format = PIXFORMAT_JPEG;
   //config.pixel_format = PIXFORMAT_RGB565; // PIXFORMAT_RGB888 (x) // PIXFORMAT_JPEG
   // Note: only support: PIXFORMAT_GRAYSCALE / PIXFORMAT_GRAYSCALE / PIXFORMAT_RGB565 / PIXFORMAT_JPEG
-  //config.frame_size =  FRAMESIZE_240X240; //FRAMESIZE_QQVGA (160x120)  //FRAMESIZE_240X240
-  config.frame_size =  FRAMESIZE_96X96;
+  //config.frame_size =  FRAMESIZE_96X96; //FRAMESIZE_QQVGA (160x120)  //FRAMESIZE_240X240 
+  config.frame_size =  FRAMESIZE_240X240;
   config.jpeg_quality = 10;
-  config.fb_count = 2;
+  config.fb_count = 1;
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -301,6 +352,15 @@ void setup() {
     s->set_brightness(s, 1); // up the brightness just a bit
     s->set_saturation(s, 0); // lower the saturation
   }
+
+  RGB888BufferSize = 240*240*3;
+  RGB565BufferSize = 96*96*2;
+  BmpBufferSize = 96*96*3 + 54;
+  // for MQTT send BMP data to Cloud, never free it.
+  BmpBuffer = (uint8_t *) malloc(54+RGB888BufferSize);
+  RGB888Buffer = BmpBuffer + 54;
+  // for TFT_eSPI tft.pushImage, never free it.
+  RGB565Buffer = (uint8_t *) malloc(96*96*2);
 
   // fill BMP header to BmpBuffer
   memcpy (BmpBuffer, bmp96x96header, sizeof(bmp96x96header));
@@ -336,16 +396,27 @@ void setup() {
 // main loop
 void loop() {
   //uint32_t StartTime, EndTime;
-  camera_fb_t *fb = NULL;
-  fb = esp_camera_fb_get();
-  if (!fb) {
+
+  // clear camera buffer?
+  gfb = esp_camera_fb_get();
+  esp_camera_fb_return(gfb);
+
+  //camera_fb_t *fb = NULL;
+  gfb = esp_camera_fb_get();
+  if (!gfb) {
     Serial.println("Camera capture failed");
     return;
   }
 
   //Serial.println("Start show screen.");
   //StartTime = micros(); //millis();
+  if (ei_camera_capture((size_t)EI_CLASSIFIER_INPUT_WIDTH, (size_t)EI_CLASSIFIER_INPUT_HEIGHT, RGB888Buffer) == false) {
+    Serial.println ("\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! capture(fb) error !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n");
+    return;
+  }  
   //showScreen(fb, TFT_YELLOW);
+  tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)RGB565Buffer);
+
   //EndTime = micros(); //millis();
   //Serial.printf("Show screen. spend time: %d ms\n", EndTime - StartTime);
   //Serial.printf("Show screen. spend time: %d.%d ms\n", (EndTime - StartTime)/1000, (EndTime - StartTime)%1000);
@@ -360,6 +431,13 @@ void loop() {
   multi_identify();
 #endif
 */
+
+  // continue classify and send pic to cloud, delay LOOP_DELAY_TIME
+  identify();
+  //MQTT_picture();
+  MQTT_picture_JPG();
+
+/*
 
   // ########### process 3(broker) x 3(option topic) from here ###########
   //CycleCount++;  // move to report method, make sure not miss time counting
@@ -403,17 +481,17 @@ void loop() {
 
   // loop # start
   Serial.printf("=[Loop #%03d for Broker: %s, Topic: %s, (topic option:%d)]=\n", CycleCount, mqtt_broker[BrokerIndex], mqtt_EdgeTopic[TopicOptionIndex], TopicOptionIndex + 1);
-  if (!capture(fb)) {
-    Serial.println ("\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! capture(fb) error !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n");
-    return;
-  }
+  // move to up //if (!capture(fb)) {
+  //  Serial.println ("\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! capture(fb) error !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n");
+  //  return;
+  //}
 
   switch (TopicOptionIndex) {
     case 0:   // option 1: only send picture, do not classify
-      MQTT_picture();
+      MQTT_picture_JPG();
       break;
     case 1:   // option 2: do classify, send result message only
-      identify(fb);
+      identify();
       StartTimeMQTT = millis();
       if (PersonDetect == true) {
         mqttClient.publish(mqtt_EdgeTopic[TopicOptionIndex], "PersonDetect");
@@ -423,11 +501,11 @@ void loop() {
       MqttSendTime = millis() - StartTimeMQTT;
       break;
     case 2:   // option 3: do classify, only send person picture
-      identify(fb);
+      identify();
       // workaround here, force 50% person
       PersonDetect = (CycleCount % 2 == 1);
       if (PersonDetect == true) {
-        MQTT_picture();
+        MQTT_picture_JPG();
       } else {
         // don't run MQTT, run ReportLoop directly
         ReportLoop (true); // true: skipMQTT  
@@ -435,7 +513,9 @@ void loop() {
       break;
   }
 
-  esp_camera_fb_return(fb);
+*/
+
+  esp_camera_fb_return(gfb);
 
   // delay for next loop & receive mqtt ... 
   Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleCount, LOOP_DELAY_TIME);
@@ -446,20 +526,23 @@ void loop() {
     mqttClient.loop();  // spend around 43 us.
     delay(10);  // delay 10 ms to prevent do too many time of mqttClient.loop()
     now = millis();
-    if (ReportReceived == true) {
+    if (REDUCE_POLLING_TIME == true && ReportReceived == true) {
       delay(10); // skip wait for next loop since receive/finish MQTT report.
       break;
     }
-  }
+  } // while for delay
+
 } // loop
 
+/*
 void showScreen(camera_fb_t *fb, uint16_t color) {
   //int StartTime, EndTime;
   //tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)fb->buf);
   tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)RGB565Buffer);
 }
+*/
 
-void identify(camera_fb_t *fb) {
+void identify(/* camera_fb_t *fb */) {
   uint32_t StartTime, EndTime;
   
   // capture a image and classify it
@@ -468,7 +551,7 @@ void identify(camera_fb_t *fb) {
 #endif    
 //    Serial.println("Start classify.");
     StartTime = millis();
-    String result = classify(fb);
+    String result = classify(/*fb*/);
     EndTime = millis();
 //    Serial.printf("End classify. spend time: %d ms\n", EndTime - StartTime);
 
@@ -637,7 +720,7 @@ void multi_identify() {
 */
 
 // classify labels
-String classify(camera_fb_t * fb) {
+String classify(/* camera_fb_t * fb */) {
   int StartTime, EndTime;
   int index;
   uint16_t ResultColor = TFT_GREEN;
@@ -727,6 +810,7 @@ String classify(camera_fb_t * fb) {
   return String(result.classification[index].label);
 }
 
+// 2024/5/26 discard this function due to change to jpg format
 // capture image from cam
 bool capture(camera_fb_t * fb) {
 
@@ -758,7 +842,7 @@ bool capture(camera_fb_t * fb) {
   }
   memcpy(RGB888Buffer, fb->buf, fb->len);
 
-  // 2. transfer RGB565 to RGB565Buffer
+  // 2. transfer RGB888 to RGB565Buffer
   for (uint16_t i=0; i < RGB888BufferSize; i+=3) {
     rgb888_to_565( ((uint16_t *)RGB565Buffer + i/3), RGB888Buffer[i], RGB888Buffer[i+1], RGB888Buffer[i+2] );
   }
@@ -776,6 +860,61 @@ bool capture(camera_fb_t * fb) {
   }
 
   return true;
+}
+
+/**
+ * @brief      Capture, rescale and crop image
+ *
+ * @param[in]  img_width     width of output image
+ * @param[in]  img_height    height of output image
+ * @param[in]  out_buf       pointer to store output image, NULL may be used
+ *                           if ei_camera_frame_buffer is to be used for capture and resize/cropping.
+ *
+ * @retval     false if not initialised, image captured, rescaled or cropped failed
+ *
+ */
+bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf) {
+    bool do_resize = false;
+
+    /*
+    camera_fb_t *fb = esp_camera_fb_get();
+
+    if (!fb) {
+        ei_printf("Camera capture failed\n");
+        return false;
+    }
+    */
+
+   bool converted = fmt2rgb888(gfb->buf, gfb->len, PIXFORMAT_JPEG, out_buf);
+
+   //esp_camera_fb_return(fb);
+
+   if(!converted){
+       ei_printf("Conversion failed\n");
+       return false;
+   }
+
+    if ((img_width != EI_CAMERA_RAW_FRAME_BUFFER_COLS)
+        || (img_height != EI_CAMERA_RAW_FRAME_BUFFER_ROWS)) {
+        do_resize = true;
+    }
+
+    if (do_resize) {
+        ei::image::processing::crop_and_interpolate_rgb888(
+        out_buf,
+        EI_CAMERA_RAW_FRAME_BUFFER_COLS,
+        EI_CAMERA_RAW_FRAME_BUFFER_ROWS,
+        out_buf,
+        img_width,
+        img_height);
+    }
+
+  // 2. transfer RGB888 to RGB565Buffer
+  for (uint16_t i=0; i < img_width*img_height*3; i+=3) {
+    rgb888_to_565( ((uint16_t *)RGB565Buffer + i/3), RGB888Buffer[i], RGB888Buffer[i+1], RGB888Buffer[i+2] );
+  }
+
+    return true;
 }
 
 int raw_feature_get_data(size_t offset, size_t out_len, float *signal_ptr) {

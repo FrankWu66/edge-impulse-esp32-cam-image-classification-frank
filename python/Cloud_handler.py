@@ -50,8 +50,12 @@ def receive_and_save_pic (client, userdata, message):
     #filename = 's_%d.jpg' % index
     filename = path + '\\s_%d.bmp' % index
 
-    print('received from Edge: %s' % (datetime.datetime.now().strftime(ISOTIMEFORMAT)))
+    print('received from Edge: %s, size: %d' % (datetime.datetime.now().strftime(ISOTIMEFORMAT), len(message.payload)) )
     #print('received from Edge: [%s]: %s' % (message.payload, datetime.datetime.now().strftime(ISOTIMEFORMAT)))
+
+    if len(message.payload) != 27702:
+        # mean this payload not 96X96 BMP... so save it as jpg
+        filename = path + '\\s_%d.jpg' % index
     
     f = open(filename,'wb+')
     f.write(message.payload)
