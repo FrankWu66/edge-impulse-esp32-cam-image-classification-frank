@@ -69,16 +69,16 @@ def receive_and_save_pic (client, userdata, message):
     if len(faces):
         detectFace = True
     for (x, y, w, h) in faces:
-        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 1)   # mark face by green color #BGR
-        cv2.putText(img, 'face', (x,y-5),cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0), 1, cv2.LINE_AA)
+        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)   # mark face by green color #BGR
+        cv2.putText(img, 'face', (x,y-5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1, cv2.LINE_AA)
 
     # detect upper body
     ubodys = ubody_cascade.detectMultiScale(gray)
     if len(ubodys):
         detectUbody = True
     for (x, y, w, h) in ubodys:
-        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 1)   # mark ubody by blue color
-        cv2.putText(img, 'upper body', (x,y-5),cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255,0,0), 1, cv2.LINE_AA)
+        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)   # mark ubody by blue color
+        cv2.putText(img, 'upper body', (x,y-5),cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1, cv2.LINE_AA)
 
     cv2.imwrite(filename, img)
 
