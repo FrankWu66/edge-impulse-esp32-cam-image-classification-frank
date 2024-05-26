@@ -83,7 +83,7 @@ def receive_and_save_pic (client, userdata, message):
     cv2.imwrite(filename, img)
 
     #img=cv2.resize(img, (640, 480))
-    img=cv2.resize(img, (576, 576))
+    #img=cv2.resize(img, (576, 576))
     cv2.imshow(message.topic, img)
     key=cv2.waitKey(1)  # wait 1ms for keyboard...
     #cv2.destroyWindow('image')

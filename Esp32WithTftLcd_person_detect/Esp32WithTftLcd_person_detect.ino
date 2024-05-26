@@ -102,10 +102,6 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
 void identify();
 String classify();
 
-/* Constant defines -------------------------------------------------------- */
-#define EI_CAMERA_RAW_FRAME_BUFFER_COLS           240
-#define EI_CAMERA_RAW_FRAME_BUFFER_ROWS           240
-
 //dl_matrix3du_t *resized_matrix = NULL;
 ei_impulse_result_t result = {0};
 
@@ -331,8 +327,8 @@ void setup() {
   config.pixel_format = PIXFORMAT_JPEG;
   //config.pixel_format = PIXFORMAT_RGB565; // PIXFORMAT_RGB888 (x) // PIXFORMAT_JPEG
   // Note: only support: PIXFORMAT_GRAYSCALE / PIXFORMAT_GRAYSCALE / PIXFORMAT_RGB565 / PIXFORMAT_JPEG
-  //config.frame_size =  FRAMESIZE_96X96; //FRAMESIZE_QQVGA (160x120)  //FRAMESIZE_240X240 
-  config.frame_size =  FRAMESIZE_240X240;
+  //config.frame_size =  FRAMESIZE_96X96; //FRAMESIZE_QQVGA (160x120)  //FRAMESIZE_240X240 //FRAMESIZE_VGA(640x480)
+  config.frame_size =  FRAMESIZE_VGA;
   config.jpeg_quality = 10;
   config.fb_count = 1;
 
@@ -353,7 +349,8 @@ void setup() {
     s->set_saturation(s, 0); // lower the saturation
   }
 
-  RGB888BufferSize = 240*240*3;
+  //RGB888BufferSize = 240*240*3;
+  RGB888BufferSize = 640*480*3;
   RGB565BufferSize = 96*96*2;
   BmpBufferSize = 96*96*3 + 54;
   // for MQTT send BMP data to Cloud, never free it.
@@ -434,8 +431,10 @@ void loop() {
 
   // continue classify and send pic to cloud, delay LOOP_DELAY_TIME
   identify();
-  //MQTT_picture();
+  MQTT_picture();
+  delay(1000);
   MQTT_picture_JPG();
+  delay(1000);
 
 /*
 
@@ -894,16 +893,16 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
        return false;
    }
 
-    if ((img_width != EI_CAMERA_RAW_FRAME_BUFFER_COLS)
-        || (img_height != EI_CAMERA_RAW_FRAME_BUFFER_ROWS)) {
+    if ((img_width != gfb->width)
+        || (img_height != gfb->height)) {
         do_resize = true;
     }
 
     if (do_resize) {
         ei::image::processing::crop_and_interpolate_rgb888(
         out_buf,
-        EI_CAMERA_RAW_FRAME_BUFFER_COLS,
-        EI_CAMERA_RAW_FRAME_BUFFER_ROWS,
+        gfb->width,
+        gfb->height,
         out_buf,
         img_width,
         img_height);
