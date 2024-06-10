@@ -429,14 +429,15 @@ void loop() {
 #endif
 */
 
+/*
   // continue classify and send pic to cloud, delay LOOP_DELAY_TIME
   identify();
   MQTT_picture();
   delay(1000);
   MQTT_picture_JPG();
   delay(1000);
+*/
 
-/*
 
   // ########### process 3(broker) x 3(option topic) from here ###########
   //CycleCount++;  // move to report method, make sure not miss time counting
@@ -476,7 +477,7 @@ void loop() {
   MqttSendTime = 0;
   ClassifyTime = 0;
   StartTimeLoop = millis();
-  showScreen(fb, TFT_YELLOW);
+  //showScreen(fb, TFT_YELLOW);
 
   // loop # start
   Serial.printf("=[Loop #%03d for Broker: %s, Topic: %s, (topic option:%d)]=\n", CycleCount, mqtt_broker[BrokerIndex], mqtt_EdgeTopic[TopicOptionIndex], TopicOptionIndex + 1);
@@ -502,7 +503,7 @@ void loop() {
     case 2:   // option 3: do classify, only send person picture
       identify();
       // workaround here, force 50% person
-      PersonDetect = (CycleCount % 2 == 1);
+      //PersonDetect = (CycleCount % 2 == 1);
       if (PersonDetect == true) {
         MQTT_picture_JPG();
       } else {
@@ -511,8 +512,6 @@ void loop() {
       }
       break;
   }
-
-*/
 
   esp_camera_fb_return(gfb);
 

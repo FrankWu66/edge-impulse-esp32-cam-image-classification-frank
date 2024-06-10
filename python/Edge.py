@@ -59,23 +59,23 @@ while True:
     time.sleep(1)
 '''
 
-while publish_count < 3:
+while publish_count < 6:
     #while True:
     index+=1
     publish_count += 1
     if index > 9:
         index = 1
     img=cv2.imread(str(index) + '.jpg')
-    imgBMP=cv2.imread(str(index) + '.bmp')
+    #imgBMP=cv2.imread(str(index) + '.bmp')
     byteArr = cv2.imencode('.jpg', img)[1].tobytes()
-    byteArrBMP = cv2.imencode('.bmp', imgBMP)[1].tobytes()
+    #byteArrBMP = cv2.imencode('.bmp', imgBMP)[1].tobytes()
     print ("send " + str(index) + ".jpg start:" + datetime.datetime.now().strftime(ISOTIMEFORMAT))
     #time_start= time.time()
     time_start.append(time.time())
     mqttc.publish(EdgeTopicPic, byteArr)
-    time.sleep(3)
-    time_start.append(time.time())
-    mqttc.publish(EdgeTopicPic, byteArrBMP)
+    #time.sleep(3)
+    #time_start.append(time.time())
+    #mqttc.publish(EdgeTopicPic, byteArrBMP)
     '''
     if index > 5:
         mqttc.publish(EdgeTopicPic, byteArr)  # EdgeTopicPic EdgeTopicCR EdgeTopicPP
