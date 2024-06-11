@@ -62,6 +62,7 @@ def receive_and_save_pic (client, userdata, message):
     f.write(message.payload)
     f.close()
 
+    print ('readfile_from %s'%filename) 
     img = cv2.imread(filename)
 
     # YOLO detect person
@@ -79,10 +80,13 @@ def receive_and_save_pic (client, userdata, message):
 
     # save (override) labeled imag
     #cv2.imwrite(filename, img)
+    print ('save file to: %s'%filename)
     results[0].save(filename=filename)
+    print('save successfully')
 
     #img=cv2.resize(img, (640, 480))
     #img=cv2.resize(img, (576, 576))
+    print ('readfile_2_from %s'%filename)
     img = cv2.imread(filename)
     cv2.imshow(message.topic, img)
     cv2.moveWindow(message.topic, 850, 0)
@@ -90,6 +94,7 @@ def receive_and_save_pic (client, userdata, message):
     #cv2.destroyWindow('image')
     
     payload = 'C2E_' + str(index) + ", detectPerson: %d" % (detectPerson) #+ '\x00'
+    print('payload is [%s]'%payload)
     return payload
 
 
@@ -104,6 +109,8 @@ def on_message(client, userdata, message):
 
     # reset index when change topic
     if message.topic != lastestTopic:
+        if lastestTopic != EdgeTopicCR:
+            cv2.destroyWindow(lastestTopic) 
         index = 0
         personCount = 0
         lastestTopic = message.topic
@@ -126,7 +133,9 @@ def on_message(client, userdata, message):
         payload = receive_and_save_pic (client, userdata, message)
         payload += ", accuracy: %.4f" % (personCount/index)
 
+    print ('publish to: %s'%CloudTopic)
     client.publish(CloudTopic, payload)
+    print ('publish ok')
     time_end = time.time()
     time_interval = time_end - time_start
     print ("finish send message:" + payload)
@@ -152,7 +161,8 @@ print ('init yolo model...')
 model('bus.jpg')
 print ('done.')
 
-#setting MQTT connect   
+#setting MQTT connect
+   
 mqttcLocal = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttcLocal.on_connect = on_connect
 mqttcLocal.on_message = on_message

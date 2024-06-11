@@ -107,6 +107,8 @@ def on_message(client, userdata, message):
 
     # reset index when change topic
     if message.topic != lastestTopic:
+        if lastestTopic != EdgeTopicCR:
+            cv2.destroyWindow(lastestTopic) 
         index = 0
         personCount = 0
         lastestTopic = message.topic

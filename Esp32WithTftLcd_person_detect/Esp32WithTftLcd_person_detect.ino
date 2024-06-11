@@ -36,7 +36,7 @@
 
 #define LOOP_DELAY_TIME   6000  // delay time for continuous
 #define REDUCE_POLLING_TIME   true   // if receive MQTT subscribe...skip delay for next loop
-#define LOOP_COUNT        100   // test count for per MQTT broker and topic option
+#define LOOP_COUNT        10   // test count for per MQTT broker and topic option
 
 // ------ 以下修改成你自己的WiFi帳號密碼 ------
 const char* ssid = "iespmqtt";
@@ -417,7 +417,6 @@ void loop() {
     esp_camera_fb_return(gfb);
     return;
   }  
-  esp_camera_fb_return(gfb);
 
   //showScreen(fb, TFT_YELLOW);
   tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)RGB565Buffer);
@@ -520,6 +519,9 @@ void loop() {
       break;    
   }
 
+  // MUST free gfb here due to MQTT_picture_JPG need read raw data from gfb
+  esp_camera_fb_return(gfb);
+
   // delay for next loop & receive mqtt ... 
   Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleCount, LOOP_DELAY_TIME);
   long tt,now;
@@ -561,7 +563,7 @@ void identify(/* camera_fb_t *fb */) {
     // display result
     //Serial.printf("Result: %s\n", result);
     ClassifyTime = EndTime - StartTime;
-    Serial.printf("End classify. Result: << "); Serial.print(result); Serial.printf(" >>,  spend time: %d ms\n", ClassifyTime);
+    Serial.printf("End classify. Result: <<###############    "); Serial.print(result); Serial.printf("    ###############>>,  spend time: %d ms\n", ClassifyTime);
     //tft_drawtext(4, 128 - 8, result, 1, TFT_GREEN /*ST77XX_GREEN*/);
 
 #if BTN_CONTROL == true  
