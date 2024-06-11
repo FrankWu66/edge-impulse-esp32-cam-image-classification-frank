@@ -162,7 +162,7 @@ model('bus.jpg')
 print ('done.')
 
 #setting MQTT connect
-   
+'''
 mqttcLocal = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttcLocal.on_connect = on_connect
 mqttcLocal.on_message = on_message
@@ -174,7 +174,7 @@ mqttGo.on_connect = on_connect
 mqttGo.on_message = on_message
 mqttGo.connect(MqttBrokerMqttgo, MqttPort, 60)
 mqttGo.loop_start()
-
+'''
 mqttEc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttEc.on_connect = on_connect
 mqttEc.on_message = on_message

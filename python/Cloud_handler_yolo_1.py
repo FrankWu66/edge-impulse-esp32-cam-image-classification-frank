@@ -167,8 +167,8 @@ mqttcLocal = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttcLocal.on_connect = on_connect
 mqttcLocal.on_message = on_message
 mqttcLocal.connect(MqttBrokerLocal, MqttPort, 60)
-mqttcLocal.loop_start()
-
+mqttcLocal.loop_forever()
+'''
 mqttGo = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttGo.on_connect = on_connect
 mqttGo.on_message = on_message
@@ -180,5 +180,5 @@ mqttEc.on_connect = on_connect
 mqttEc.on_message = on_message
 mqttEc.connect(MqttBrokerEclipse, MqttPort, 60)
 mqttEc.loop_forever()
-
+'''
 

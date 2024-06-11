@@ -162,23 +162,23 @@ model('bus.jpg')
 print ('done.')
 
 #setting MQTT connect
-   
+'''
 mqttcLocal = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttcLocal.on_connect = on_connect
 mqttcLocal.on_message = on_message
 mqttcLocal.connect(MqttBrokerLocal, MqttPort, 60)
 mqttcLocal.loop_start()
-
+'''
 mqttGo = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttGo.on_connect = on_connect
 mqttGo.on_message = on_message
 mqttGo.connect(MqttBrokerMqttgo, MqttPort, 60)
-mqttGo.loop_start()
-
+mqttGo.loop_forever()
+'''
 mqttEc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttEc.on_connect = on_connect
 mqttEc.on_message = on_message
 mqttEc.connect(MqttBrokerEclipse, MqttPort, 60)
 mqttEc.loop_forever()
-
+'''
 
