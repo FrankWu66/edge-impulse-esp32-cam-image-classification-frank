@@ -108,6 +108,7 @@ def on_message(client, userdata, message):
         personCount = 0
         lastestTopic = message.topic
         path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S_') + lastestTopic[20:]
+        print ('#### change path to %s ####'%path)
         if not os.path.isdir(path):
             os.mkdir(path)        
 
@@ -115,13 +116,13 @@ def on_message(client, userdata, message):
     time_start = time.time()
 
     if message.topic == EdgeTopicPic:
-        #print ('EdgeTopicPic')
+        print ('EdgeTopicPic')
         payload = receive_and_save_pic (client, userdata, message)
     elif message.topic == EdgeTopicCR:
-        #print ('EdgeTopicCR')
+        print ('EdgeTopicCR')
         payload = 'C2E_' + str(index) + ", got it."
     elif message.topic == EdgeTopicPP:
-        #print ('EdgeTopicPP')
+        print ('EdgeTopicPP')
         payload = receive_and_save_pic (client, userdata, message)
         payload += ", accuracy: %.4f" % (personCount/index)
 

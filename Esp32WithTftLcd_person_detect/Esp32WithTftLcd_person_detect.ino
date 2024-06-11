@@ -34,7 +34,7 @@
 #define FAST_CLASSIFY     0
 //#define ON_LINE           true
 
-#define LOOP_DELAY_TIME   3000  // delay time for continuous
+#define LOOP_DELAY_TIME   6000  // delay time for continuous
 #define REDUCE_POLLING_TIME   true   // if receive MQTT subscribe...skip delay for next loop
 #define LOOP_COUNT        100   // test count for per MQTT broker and topic option
 
@@ -169,8 +169,13 @@ void mqtt_reconnect() {
 
 //Report loop date, separate here for called by option3 + non-person
 void ReportLoop (bool skipMQTT) {
-  uint32_t EndTime=0, TimeIntervalMQTT=0, TimeIntervalAll=0;
+  uint32_t EndTime=0, TimeIntervalMQTT=0, TimeIntervalAll=0, AvgTimeMQTT;
 
+  if (MqttCount == 0) {
+    AvgTimeMQTT = 0;
+  } else {
+    AvgTimeMQTT = TotalTimeMQTT/MqttCount;
+  }
   EndTime = millis();
   if (skipMQTT != true) {
     TimeIntervalMQTT = EndTime - StartTimeMQTT;
@@ -179,9 +184,9 @@ void ReportLoop (bool skipMQTT) {
   TimeIntervalAll = EndTime - StartTimeLoop;
   TotalTimeAll += TimeIntervalAll;
   Serial.printf ("    <loop %03d> spend time [loop]: %d ms, avg time: %d ms; [MQTT]: %d ms, avg time: %d ms. [MQTT consume rate] %.4f\n", 
-                    CycleCount, TimeIntervalAll, TotalTimeAll/CycleCount, TimeIntervalMQTT, TotalTimeMQTT/MqttCount, (float)TotalTimeMQTT/TotalTimeAll );
+                    CycleCount, TimeIntervalAll, TotalTimeAll/CycleCount, TimeIntervalMQTT, AvgTimeMQTT, (float)TotalTimeMQTT/TotalTimeAll );
   Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f\n\n",
-                  BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,TotalTimeMQTT/MqttCount,(float)TotalTimeMQTT/TotalTimeAll);
+                  BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,AvgTimeMQTT,(float)TotalTimeMQTT/TotalTimeAll);
   ReportReceived = true;
   CycleCount++;
 }
@@ -409,8 +414,11 @@ void loop() {
   //StartTime = micros(); //millis();
   if (ei_camera_capture((size_t)EI_CLASSIFIER_INPUT_WIDTH, (size_t)EI_CLASSIFIER_INPUT_HEIGHT, RGB888Buffer) == false) {
     Serial.println ("\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! capture(fb) error !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n");
+    esp_camera_fb_return(gfb);
     return;
   }  
+  esp_camera_fb_return(gfb);
+
   //showScreen(fb, TFT_YELLOW);
   tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)RGB565Buffer);
 
@@ -437,7 +445,6 @@ void loop() {
   MQTT_picture_JPG();
   delay(1000);
 */
-
 
   // ########### process 3(broker) x 3(option topic) from here ###########
   //CycleCount++;  // move to report method, make sure not miss time counting
@@ -510,10 +517,8 @@ void loop() {
         // don't run MQTT, run ReportLoop directly
         ReportLoop (true); // true: skipMQTT  
       }
-      break;
+      break;    
   }
-
-  esp_camera_fb_return(gfb);
 
   // delay for next loop & receive mqtt ... 
   Serial.printf("Finish loop %d, wait for %d ms to next loop.\n", CycleCount, LOOP_DELAY_TIME);
