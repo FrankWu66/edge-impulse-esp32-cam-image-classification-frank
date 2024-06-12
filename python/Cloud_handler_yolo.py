@@ -4,6 +4,7 @@ import datetime
 import time
 import os
 import sys
+import subprocess
 
 from ultralytics import YOLO
 
@@ -26,10 +27,12 @@ personCount = 0
 time_start = 0
 time_end = 0
 lastestTopic = EdgeTopicPic
+path = ''
 
-path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S_') + lastestTopic[20:]
-if not os.path.isdir(path):
-    os.mkdir(path)
+if len(sys.argv) >= 2:
+    path = datetime.datetime.now().strftime('%m%d_%H%M_%S_') + 'M%s_'%sys.argv[1] + lastestTopic[20:]
+    if not os.path.isdir(path):
+        os.mkdir(path)
 
 '''
 file_path = "randomfile.txt"
@@ -87,10 +90,12 @@ def receive_and_save_pic (client, userdata, message):
     #img=cv2.resize(img, (640, 480))
     #img=cv2.resize(img, (576, 576))
     #print ('readfile_2_from %s'%filename)
+    '''
     img = cv2.imread(filename)
     cv2.imshow(message.topic, img)
     cv2.moveWindow(message.topic, 850, 0)
     key=cv2.waitKey(1)  # wait 1ms for keyboard...
+    '''
     #cv2.destroyWindow('image')
     
     payload = 'C2E_' + str(index) + ", detectPerson: %d" % (detectPerson) #+ '\x00'
@@ -109,8 +114,8 @@ def on_message(client, userdata, message):
 
     # reset index when change topic
     if message.topic != lastestTopic:
-        if lastestTopic != EdgeTopicCR:
-            cv2.destroyWindow(lastestTopic) 
+        #if lastestTopic != EdgeTopicCR:
+        #    cv2.destroyWindow(lastestTopic) 
         index = 0
         personCount = 0
         lastestTopic = message.topic
@@ -157,28 +162,38 @@ def on_message(client, userdata, message):
     print ("  ")
 '''
  
-print ('init yolo model...')
-model('bus.jpg')
-print ('done.')
 
-#setting MQTT connect
-   
-mqttcLocal = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-mqttcLocal.on_connect = on_connect
-mqttcLocal.on_message = on_message
-mqttcLocal.connect(MqttBrokerLocal, MqttPort, 60)
-mqttcLocal.loop_start()
 
-mqttGo = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-mqttGo.on_connect = on_connect
-mqttGo.on_message = on_message
-mqttGo.connect(MqttBrokerMqttgo, MqttPort, 60)
-mqttGo.loop_start()
+def main():
+    print ('init yolo model...')
+    model('bus.jpg')
+    print ('done.')
+    MqttBroker='null'
+    if sys.argv[1] == '1':
+        MqttBroker = MqttBrokerLocal
+    elif sys.argv[1] == '2':
+        MqttBroker = MqttBrokerMqttgo
+    elif sys.argv[1] == '3':
+        MqttBroker = MqttBrokerEclipse
 
-mqttEc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-mqttEc.on_connect = on_connect
-mqttEc.on_message = on_message
-mqttEc.connect(MqttBrokerEclipse, MqttPort, 60)
-mqttEc.loop_forever()
+    print ('\n\n This is for MQTT: %s\n DO NOT press Ctrl+C unless you don\'t need log message...\n\n'%MqttBroker)
+    mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    mqttc.on_connect = on_connect
+    mqttc.on_message = on_message
+    mqttc.connect(MqttBroker, MqttPort, 60)
+    mqttc.loop_forever()
 
+    #always keep window
+    while True:
+        pass
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        subprocess.Popen("python Cloud_handler_yolo.py 1", creationflags=subprocess.CREATE_NEW_CONSOLE)
+        time.sleep(1)
+        subprocess.Popen("python Cloud_handler_yolo.py 2", creationflags=subprocess.CREATE_NEW_CONSOLE)
+        time.sleep(1)
+        subprocess.Popen("python Cloud_handler_yolo.py 3", creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        main()
 

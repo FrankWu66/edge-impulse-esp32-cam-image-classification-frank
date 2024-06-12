@@ -36,7 +36,7 @@
 
 #define LOOP_DELAY_TIME   6000  // delay time for continuous
 #define REDUCE_POLLING_TIME   true   // if receive MQTT subscribe...skip delay for next loop
-#define LOOP_COUNT        10   // test count for per MQTT broker and topic option
+#define LOOP_COUNT        100   // test count for per MQTT broker and topic option
 
 // ------ 以下修改成你自己的WiFi帳號密碼 ------
 const char* ssid = "iespmqtt";
