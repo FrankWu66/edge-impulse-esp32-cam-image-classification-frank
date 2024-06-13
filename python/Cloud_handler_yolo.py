@@ -8,6 +8,7 @@ import subprocess
 
 from ultralytics import YOLO
 
+#os.chdir(os.path.dirname(os.path.abspath(__file__)))
 model = YOLO("./yolov8n.pt")
 
 MqttBrokerLocal="127.0.0.1"
@@ -90,12 +91,12 @@ def receive_and_save_pic (client, userdata, message):
     #img=cv2.resize(img, (640, 480))
     #img=cv2.resize(img, (576, 576))
     #print ('readfile_2_from %s'%filename)
-    '''
+    
     img = cv2.imread(filename)
     cv2.imshow(message.topic, img)
     cv2.moveWindow(message.topic, 850, 0)
     key=cv2.waitKey(1)  # wait 1ms for keyboard...
-    '''
+    
     #cv2.destroyWindow('image')
     
     payload = 'C2E_' + str(index) + ", detectPerson: %d" % (detectPerson) #+ '\x00'
@@ -188,12 +189,15 @@ def main():
         pass
 
 if __name__ == "__main__":
+    
     if len(sys.argv) < 2:
         subprocess.Popen("python Cloud_handler_yolo.py 1", creationflags=subprocess.CREATE_NEW_CONSOLE)
         time.sleep(1)
         subprocess.Popen("python Cloud_handler_yolo.py 2", creationflags=subprocess.CREATE_NEW_CONSOLE)
         time.sleep(1)
         subprocess.Popen("python Cloud_handler_yolo.py 3", creationflags=subprocess.CREATE_NEW_CONSOLE)
+        time.sleep(1)
+        subprocess.Popen("python OpenCv_show.py", creationflags=subprocess.CREATE_NEW_CONSOLE)
     else:
         main()
 

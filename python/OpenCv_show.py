@@ -29,7 +29,9 @@ def show(foldername):
 def main():
     if len(sys.argv) < 2:
         print ('Please assign image source forder like D:\\ImageNet')
-        return
+        #foldername = os.path.join(os.getcwd(), '..', '..', 'processingImage', 'MIX_PIC')
+        foldername = 'E:\processingImage\MIX_PIC'
+        #return
     else:
         foldername = sys.argv[1]
 
@@ -37,7 +39,7 @@ def main():
         print ('foldername: [%s]' % foldername)
     else:
         print ('foldername: [' + foldername + '] is not a exist folder!')
-        return
+        #return
 
     #keep show those image
     while(True):
