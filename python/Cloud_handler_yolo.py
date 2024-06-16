@@ -120,7 +120,8 @@ def on_message(client, userdata, message):
         index = 0
         personCount = 0
         lastestTopic = message.topic
-        path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S_') + lastestTopic[20:]
+        #path = datetime.datetime.now().strftime('%m_%d_%H_%M_%S_') + lastestTopic[20:]
+        path = datetime.datetime.now().strftime('%m%d_%H%M_%S_') + 'M%s_'%sys.argv[1] + lastestTopic[20:]
         #print ('#### change path to %s ####'%path)
         if not os.path.isdir(path):
             os.mkdir(path)        

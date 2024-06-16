@@ -61,6 +61,7 @@ char* mqtt_broker[3]        = {MQTT_BROKER_LOCAL, MQTT_BROKER_MQTTGO, MQTT_BROKE
 char* mqtt_EdgeTopic[3]     = {EDGE_TOPIC_OP1_PIC, EDGE_TOPIC_OP2_CR, EDGE_TOPIC_OP3_PP};
 uint8_t BrokerIndex         = 0;
 uint8_t TopicOptionIndex    = 0;
+uint8_t CloudDetectPerson   = 2;  // 0: non person, 1: person, 2: N/A
 bool PersonDetect           = false;
 bool ReportReceived         = false;
 
@@ -148,7 +149,7 @@ void setup_wifi() {
 void mqtt_reconnect() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
-    Serial.printf("Attempting MQTT connection...broker: %s", mqtt_broker[BrokerIndex]);
+    Serial.printf("Attempting MQTT connection...broker: %s, ", mqtt_broker[BrokerIndex]);
     // Create a random client ID
     String clientId = "ESP32CAM_Client-";
     clientId += String(random(0xffff), HEX);
@@ -158,8 +159,14 @@ void mqtt_reconnect() {
       // re-subscribe
       mqttClient.subscribe(CLOUD_TOPIC);
     } else {
-      Serial.print("failed, rc=");
+      Serial.printf("failed (%s), rc=", clientId.c_str());
       Serial.print(mqttClient.state());
+
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Reconnecting to WiFi...");
+        WiFi.disconnect();
+        WiFi.reconnect();
+      }
       Serial.println(" try again in 1 seconds");
       // Wait 1 seconds before retrying
       delay(1000);
@@ -171,36 +178,50 @@ void mqtt_reconnect() {
 void ReportLoop (bool skipMQTT) {
   uint32_t EndTime=0, TimeIntervalMQTT=0, TimeIntervalAll=0, AvgTimeMQTT;
 
-  if (MqttCount == 0) {
-    AvgTimeMQTT = 0;
-  } else {
-    AvgTimeMQTT = TotalTimeMQTT/MqttCount;
-  }
   EndTime = millis();
   if (skipMQTT != true) {
     TimeIntervalMQTT = EndTime - StartTimeMQTT;
     TotalTimeMQTT += TimeIntervalMQTT;
   }
+  if (MqttCount == 0) {
+    AvgTimeMQTT = 0;
+  } else {
+    AvgTimeMQTT = TotalTimeMQTT/MqttCount;
+  }
   TimeIntervalAll = EndTime - StartTimeLoop;
   TotalTimeAll += TimeIntervalAll;
   Serial.printf ("    <loop %03d> spend time [loop]: %d ms, avg time: %d ms; [MQTT]: %d ms, avg time: %d ms. [MQTT consume rate] %.4f\n", 
                     CycleCount, TimeIntervalAll, TotalTimeAll/CycleCount, TimeIntervalMQTT, AvgTimeMQTT, (float)TotalTimeMQTT/TotalTimeAll );
-  Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f\n\n",
-                  BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,AvgTimeMQTT,(float)TotalTimeMQTT/TotalTimeAll);
+  Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f,%d\n\n",
+                  BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,AvgTimeMQTT,(float)TotalTimeMQTT/TotalTimeAll, CloudDetectPerson);
   ReportReceived = true;
   CycleCount++;
 }
 
 //MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
 void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
+  char payloadStr[64] = {0};
+
   MqttCount++;
-  Serial.print("    Received from Cloud : [");
-  Serial.print(topic);
-  Serial.print("] msg: <<");
+  //Serial.print("    Received from Cloud : [");
+  //Serial.print(topic);
+  //Serial.print("] msg: <<");
   for (int i = 0; i < msgLength; i++) {
-    Serial.print((char)payload[i]);
+    //Serial.print((char)payload[i]);
+    payloadStr[i] = (char)payload[i];
+    if ( i >= (sizeof(payloadStr)-2) ) {
+      break;
+    }
   }
-  Serial.println(">>");
+  Serial.printf("    Received from Cloud : [%s] msg: <<%s>>\n", topic, payloadStr);
+  // search Clould detect result
+  char *loc = strstr(payloadStr, "detectPerson");
+  if (loc == NULL) {
+    CloudDetectPerson = 2; // 2:N/A
+  } else {
+    // find the index in str...ex.: C2E_100, detectPerson: 0
+    CloudDetectPerson = *(loc+14) - '0'; // 0: non person, 1: person
+  }
   ReportLoop(false);
 }
 
@@ -256,6 +277,10 @@ void MQTT_picture_JPG() {
   uint32_t EndTime;
   char* logIsPublished;
 
+  int imgSize = gfb->len;
+  int ps = MQTT_MAX_PACKET_SIZE;
+  int SendSize = 0;
+
   StartTimeMQTT = millis();
   if (! mqttClient.connected()) {
     // client loses its connection
@@ -266,9 +291,6 @@ void MQTT_picture_JPG() {
   if (! mqttClient.connected())
     logIsPublished = "  No MQTT Connection, Photo NOT Published !";
   else {
-    int imgSize = gfb->len;
-    int ps = MQTT_MAX_PACKET_SIZE;
-    int SendSize = 0;
     // start to publish the picture
     mqttClient.beginPublish(mqtt_EdgeTopic[TopicOptionIndex], imgSize, false);
 
@@ -288,7 +310,7 @@ void MQTT_picture_JPG() {
 
   EndTime = millis();
   MqttSendTime = EndTime - StartTimeMQTT;
-  Serial.printf("   Spend time: %d ms\n", MqttSendTime);
+  Serial.printf(" imgSize: %d,   Spend time: %d ms\n", imgSize, MqttSendTime);
 }
 
 // setup
@@ -391,7 +413,7 @@ void setup() {
     Serial.printf("%d - ", i);
     delay(1000);
   }
-  Serial.println("\n#CSV: BrokerIndex,TopicOptionIndex,loop,loop time,classify time,MQTT time,MQTT send time,loop avg. time,MQTT avg. time,MQTT consume rate");
+  Serial.println("\n#CSV: BrokerIndex,TopicOptionIndex,loop,loop time,classify time,MQTT time,MQTT send time,loop avg. time,MQTT avg. time,MQTT consume rate,Cloud detect person");
   Serial.println("\n");
 }
 
@@ -450,15 +472,23 @@ void loop() {
   ReportReceived = false;
 
   // block when all task done.
-  while (BrokerIndex >= 2 && TopicOptionIndex >= 2 && CycleCount > LOOP_COUNT) {
+  if /*while*/ (BrokerIndex >= 2 && TopicOptionIndex >= 2 && CycleCount > LOOP_COUNT) {
     Serial.printf("## 3 broker x 3 topic option are all done.\nReset ESP32 CAM for next test!\n\n");
-    delay(10000);
+    //delay(10000);
+    Serial.printf("## continue to run...for ever\n\n\n\n\n\n");
+
+    //reset to restart all loop
   }
 
   // switch task here
   if (CycleCount > LOOP_COUNT) {
     if (TopicOptionIndex >= 2) {
-      BrokerIndex++;
+      if (BrokerIndex >= 2) {
+        //reset to restart all loop
+        BrokerIndex = 0;
+      } else {
+        BrokerIndex++;
+      }
       TopicOptionIndex = 0;
       // disconnect MQTT broker!
       mqttClient.disconnect();
@@ -477,6 +507,7 @@ void loop() {
   }
 
   if (!mqttClient.connected()) {
+    Serial.printf("In loop(), MQTT Client Connection LOST (or 1st connect) %d!\n", __LINE__);
     mqtt_reconnect();
   }
 
