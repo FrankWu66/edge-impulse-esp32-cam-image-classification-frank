@@ -426,14 +426,14 @@ void loop() {
   // clear camera buffer?
   gfb = esp_camera_fb_get();
   esp_camera_fb_return(gfb);
-
+Serial.printf("### spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   //camera_fb_t *fb = NULL;
   gfb = esp_camera_fb_get();
   if (!gfb) {
     Serial.println("Camera capture failed");
     return;
   }
-
+Serial.printf("### spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   //Serial.println("Start show screen.");
   //StartTime = micros(); //millis();
   if (ei_camera_capture((size_t)EI_CLASSIFIER_INPUT_WIDTH, (size_t)EI_CLASSIFIER_INPUT_HEIGHT, RGB888Buffer) == false) {
@@ -441,10 +441,10 @@ void loop() {
     esp_camera_fb_return(gfb);
     return;
   }  
-
+Serial.printf("### spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   //showScreen(fb, TFT_YELLOW);
   tft.pushImage((TFT_LCD_WIDTH-SHOW_WIDTH)/2, (TFT_LCD_HEIGHT-SHOW_HEIGHT)/2, SHOW_WIDTH, SHOW_HEIGHT, (uint16_t *)RGB565Buffer);
-
+Serial.printf("### spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   //EndTime = micros(); //millis();
   //Serial.printf("Show screen. spend time: %d ms\n", EndTime - StartTime);
   //Serial.printf("Show screen. spend time: %d.%d ms\n", (EndTime - StartTime)/1000, (EndTime - StartTime)%1000);
@@ -922,9 +922,9 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
         return false;
     }
     */
-
+Serial.printf("### z spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
    bool converted = fmt2rgb888(gfb->buf, gfb->len, PIXFORMAT_JPEG, out_buf);
-
+Serial.printf("### z spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
    //esp_camera_fb_return(fb);
 
    if(!converted){
@@ -946,12 +946,12 @@ bool ei_camera_capture(uint32_t img_width, uint32_t img_height, uint8_t *out_buf
         img_width,
         img_height);
     }
-
+Serial.printf("### z spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   // 2. transfer RGB888 to RGB565Buffer
   for (uint16_t i=0; i < img_width*img_height*3; i+=3) {
     rgb888_to_565( ((uint16_t *)RGB565Buffer + i/3), RGB888Buffer[i], RGB888Buffer[i+1], RGB888Buffer[i+2] );
   }
-
+Serial.printf("### z spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
     return true;
 }
 
