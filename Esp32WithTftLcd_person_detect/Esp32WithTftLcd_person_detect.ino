@@ -167,9 +167,9 @@ void mqtt_reconnect() {
         WiFi.disconnect();
         WiFi.reconnect();
       }
-      Serial.println(" try again in 1 seconds");
-      // Wait 1 seconds before retrying
-      delay(1000);
+      Serial.println(" try again in 3 seconds");
+      // Wait 3 seconds before retrying
+      delay(3000);
     }
   }
 }
@@ -194,6 +194,7 @@ void ReportLoop (bool skipMQTT) {
                     CycleCount, TimeIntervalAll, TotalTimeAll/CycleCount, TimeIntervalMQTT, AvgTimeMQTT, (float)TotalTimeMQTT/TotalTimeAll );
   Serial.printf("    #CSV: %d,%d,%d,%d,%d,%d,%d,%d,%d,%.4f,%d\n\n",
                   BrokerIndex,TopicOptionIndex,CycleCount,TimeIntervalAll,ClassifyTime,TimeIntervalMQTT,MqttSendTime,TotalTimeAll/CycleCount,AvgTimeMQTT,(float)TotalTimeMQTT/TotalTimeAll, CloudDetectPerson);
+  CloudDetectPerson = 2; // reset this to 2:N/A 
   ReportReceived = true;
   CycleCount++;
 }
@@ -420,6 +421,7 @@ void setup() {
 // main loop
 void loop() {
   //uint32_t StartTime, EndTime;
+  StartTimeLoop = millis();
 
   // clear camera buffer?
   gfb = esp_camera_fb_get();
@@ -513,7 +515,7 @@ void loop() {
 
   MqttSendTime = 0;
   ClassifyTime = 0;
-  StartTimeLoop = millis();
+  //StartTimeLoop = millis();  // move this to top of loop() for more accurate calculate
   //showScreen(fb, TFT_YELLOW);
 
   // loop # start
