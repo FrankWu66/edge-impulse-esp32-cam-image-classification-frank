@@ -9,7 +9,7 @@ import sys
 #MqttBroker="mqttgo.io"
 MqttBroker="mqtt.eclipseprojects.io"
 MqttPort=1883
-CloudTopic="frank/Clould_to_Edge"
+CloudTopic="frank/Cloud_to_Edge"
 EdgeTopic="frank/Edge_to_Cloud/#"
 EdgeTopicPic="frank/Edge_to_Cloud/Pic"
 EdgeTopicCR="frank/Edge_to_Cloud/ClassifyResult"

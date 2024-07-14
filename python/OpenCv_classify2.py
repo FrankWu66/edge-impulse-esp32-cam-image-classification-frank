@@ -51,7 +51,7 @@ def classifyImageToFolder(foldername):
             shutil.copyfile(srcimage, os.path.join(CvPersonScore0, filename))
 
         #img=cv2.resize(img, (640, 480))
-        #cv2.imshow('show in clould', img)
+        #cv2.imshow('show in cloud', img)
         #key=cv2.waitKey(1)  # wait 1ms for keyboard...
         #cv2.destroyWindow('image')
 

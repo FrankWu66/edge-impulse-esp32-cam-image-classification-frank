@@ -49,7 +49,7 @@ const char* password = "12345678";
 
 #define MQTT_PORT           1883
 
-#define CLOUD_TOPIC         "frank/Clould_to_Edge"
+#define CLOUD_TOPIC         "frank/Cloud_to_Edge"
 // option 1: only send picture, do not classify 
 #define EDGE_TOPIC_OP1_PIC  "frank/Edge_to_Cloud/Pic"
 // option 2: do classify, send result message only
@@ -199,7 +199,7 @@ void ReportLoop (bool skipMQTT) {
   CycleCount++;
 }
 
-//MQTT callback for subscrib CLOUD_TOPIC:"frank/Clould_to_Edge"
+//MQTT callback for subscrib CLOUD_TOPIC:"frank/Cloud_to_Edge"
 void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
   char payloadStr[64] = {0};
 
@@ -215,7 +215,7 @@ void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
     }
   }
   Serial.printf("    Received from Cloud : [%s] msg: <<%s>>\n", topic, payloadStr);
-  // search Clould detect result
+  // search Cloud detect result
   char *loc = strstr(payloadStr, "detectPerson");
   if (loc == NULL) {
     CloudDetectPerson = 2; // 2:N/A
