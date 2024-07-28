@@ -35,15 +35,15 @@
 //#define ON_LINE           true
 
 #define LOOP_DELAY_TIME   6000  // delay time for continuous
-#define REDUCE_POLLING_TIME   true   // if receive MQTT subscribe...skip delay for next loop
-#define LOOP_COUNT        100   // test count for per MQTT broker and topic option
+#define REDUCE_POLLING_TIME   false // (for DEMO) true   // if receive MQTT subscribe...skip delay for next loop
+#define LOOP_COUNT        5 //100   // test count for per MQTT broker and topic option
 
 // ------ 以下修改成你自己的WiFi帳號密碼 ------
 const char* ssid = "iespmqtt";
 const char* password = "12345678";
 
 // ------ 以下修改成你MQTT設定 ------
-#define MQTT_BROKER_LOCAL   "192.168.90.90"
+#define MQTT_BROKER_LOCAL   "192.168.30.30"
 #define MQTT_BROKER_MQTTGO  "mqttgo.io"
 #define MQTT_BROKER_ECLIPSE "mqtt.eclipseprojects.io"
 
@@ -82,6 +82,7 @@ uint32_t MqttCount = 0;     // need clear after change broker or topic
                     // BL (back light) and VCC -> 3V3
 
 #define BTN       4 // button (shared with flash led)
+#define RED_LED   4 // for DEMO
 
 #define SHOW_WIDTH  96
 #define SHOW_HEIGHT 96
@@ -223,6 +224,19 @@ void mqtt_callback(char* topic, byte* payload, unsigned int msgLength) {
     // find the index in str...ex.: C2E_100, detectPerson: 0
     CloudDetectPerson = *(loc+14) - '0'; // 0: non person, 1: person
   }
+
+  // for DEMO
+  switch (CloudDetectPerson) {
+    case 0: // non person
+      digitalWrite(RED_LED, LOW);
+      break;
+    case 1: // person
+      digitalWrite(RED_LED, HIGH);
+      break;
+    default:
+      break;
+  }
+
   ReportLoop(false);
 }
 
@@ -324,6 +338,8 @@ void setup() {
   pinMode(BTN, INPUT);
 #endif
 
+  pinMode(RED_LED, OUTPUT);  // for DEMO
+
   // Initialise the TFT
   tft.init();
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -396,18 +412,18 @@ void setup() {
   Serial.println("Camera Ready!...(standby, press button to start)");
   //tft_drawtext(4, 4, "Standby", 1, TFT_BLUE);
 
-  //啟動WIFI連線
-  setup_wifi();
-  mqttClient.setServer(mqtt_broker[BrokerIndex], MQTT_PORT);
-  mqttClient.setCallback(mqtt_callback);
-
   // ########### setup 3(broker) x 3(option topic) from here ###########
-  BrokerIndex      = 0;
+  BrokerIndex      = 1; // 0; // for DEMO, only run MQTTGO broker
   TopicOptionIndex = 0;
   TotalTimeAll = 0;  // need clear after change broker or topic
   TotalTimeMQTT = 0; // need clear after change broker or topic
   CycleCount = 1;    // need clear after change broker or topic
   MqttCount = 0;     // need clear after change broker or topic
+
+  //啟動WIFI連線
+  setup_wifi();
+  mqttClient.setServer(mqtt_broker[BrokerIndex], MQTT_PORT);
+  mqttClient.setCallback(mqtt_callback);
 
   Serial.printf("Wait for %d seconds to start tasks\n", 10);
   for (int i=1; i<=10; i++) {
@@ -421,8 +437,14 @@ void setup() {
 
 // main loop
 void loop() {
+
+  // for DEMO , clear GPIO4 LED
+  digitalWrite(RED_LED, LOW);
+
   //uint32_t StartTime, EndTime;
   StartTimeLoop = millis();
+  // reset screen to clean identify message and frame.
+  tft.fillScreen(TFT_BLACK);
   sensor_t * s = esp_camera_sensor_get();
 //Serial.printf("### spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   // clear camera buffer?
@@ -482,24 +504,28 @@ void loop() {
   //CycleCount++;  // move to report method, make sure not miss time counting
   ReportReceived = false;
 
+/* for DEMO
   // block when all task done.
-  if /*while*/ (BrokerIndex >= 2 && TopicOptionIndex >= 2 && CycleCount > LOOP_COUNT) {
+  if (BrokerIndex >= 2 && TopicOptionIndex >= 2 && CycleCount > LOOP_COUNT) {
     Serial.printf("## 3 broker x 3 topic option are all done.\nReset ESP32 CAM for next test!\n\n");
     //delay(10000);
     Serial.printf("## continue to run...for ever\n\n\n\n\n\n");
 
     //reset to restart all loop
   }
+*/
 
   // switch task here
   if (CycleCount > LOOP_COUNT) {
     if (TopicOptionIndex >= 2) {
+/* for DEMO
       if (BrokerIndex >= 2) {
         //reset to restart all loop
         BrokerIndex = 0;
       } else {
         BrokerIndex++;
       }
+*/      
       TopicOptionIndex = 0;
       // disconnect MQTT broker!
       mqttClient.disconnect();
@@ -850,8 +876,10 @@ String classify(/* camera_fb_t * fb */) {
   // index 1 is person
   if (index == 1) {
     PersonDetect = true;
+    digitalWrite(RED_LED, HIGH);  // for DEMO , person light red led
   } else {
     PersonDetect = false;
+    digitalWrite(RED_LED, LOW);  // for DEMO, non person turn off red led
   }
 
   // --- return the most possible label ---

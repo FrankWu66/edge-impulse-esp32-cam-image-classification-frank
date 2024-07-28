@@ -423,6 +423,8 @@ void setup() {
 void loop() {
   //uint32_t StartTime, EndTime;
   StartTimeLoop = millis();
+  // reset screen to clean identify message and frame.
+  tft.fillScreen(TFT_BLACK);
   sensor_t * s = esp_camera_sensor_get();
 //Serial.printf("### spend time at line %d: %d\n", __LINE__, millis()-StartTimeLoop);
   // clear camera buffer?
